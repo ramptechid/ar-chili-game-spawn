@@ -117,8 +117,10 @@ const XR_LIFETIME_MIN = 8500;
 const XR_LIFETIME_MAX = 22000;
 const XR_SIZE_MIN = 0.32;
 const XR_SIZE_MAX = 0.32;
-const XR_DISTANCE_MIN = 1.5;
+const XR_DISTANCE_MIN = 1;
 const XR_DISTANCE_MAX = 1.5;
+const XR_HEIGHT_MIN = -0.45;
+const XR_HEIGHT_MAX = 0.65;
 const XR_OBJECT_VERTEX_COUNT = 24;
 const XR_CATCH_ANIM_MS = 480;
 const XR_FADEIN_MS = 320;
@@ -835,16 +837,7 @@ function spawnXRObject(nearView = false) {
 
   const distance = randF(XR_DISTANCE_MIN, XR_DISTANCE_MAX);
 
-  // Spread objects vertically: floor (-1.5m), mid, ceiling (+1.8m)
-  const heightZone = Math.random();
-  let heightOffset;
-  if (heightZone < 0.28) {
-    heightOffset = randF(-1.6, -0.8);  // low / floor level
-  } else if (heightZone < 0.56) {
-    heightOffset = randF(-0.3, 0.4);   // eye level / middle
-  } else {
-    heightOffset = randF(0.7, 1.8);    // high / above head
-  }
+  const heightOffset = randF(XR_HEIGHT_MIN, XR_HEIGHT_MAX);
 
   const size = randF(XR_SIZE_MIN, XR_SIZE_MAX);
   const now = performance.now();
