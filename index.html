@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover"
+  />
+
+  <title>Green Chili Hunt</title>
+
+  <link rel="stylesheet" href="css/main.css" />
+  <link rel="stylesheet" href="css/hud.css" />
+</head>
+<body>
+
+  <!-- CAMERA BACKGROUND -->
+  <video id="cameraView" autoplay playsinline muted></video>
+
+  <!-- CAMERA OVERLAY -->
+  <div class="camera-overlay"></div>
+
+  <!-- GAME AREA -->
+  <div id="gameArea"></div>
+
+  <!-- IN-GAME HUD -->
+  <div id="gameHud" class="game-hud hidden">
+
+    <div class="top-hud">
+      <div class="hud-card">
+        <span class="hud-label">SCORE</span>
+        <span id="scoreText" class="hud-value">0</span>
+      </div>
+
+      <div class="timer-card">
+        <span class="hud-label">TIME</span>
+        <span id="timerText" class="timer-value">60</span>
+      </div>
+    </div>
+
+    <!-- TARGET MARKER -->
+    <div class="aim-area">
+      <div class="aim-circle"></div>
+      <div class="aim-dot"></div>
+      <div class="scan-line"></div>
+    </div>
+
+    <div class="bottom-hud">
+      <div class="hint-box">
+        Aim marker at a chili — or tap it directly — then CATCH!
+      </div>
+
+      <button id="catchBtn" class="catch-btn">
+        CATCH
+      </button>
+    </div>
+
+  </div>
+
+  <!-- INTRO SCREEN -->
+  <section id="introScreen" class="screen active">
+    <div class="intro-card">
+
+      <div class="logo-badge">
+        <img
+          src="assets/images/chili-green.png"
+          alt="Green Chili"
+          class="logo-image"
+        />
+      </div>
+
+      <h1>Green Chili Hunt</h1>
+
+      <p class="intro-desc">
+        Collect as many green chilies as possible in 60 seconds.
+        Chilies appear around you — aim the marker at one,
+        then press <b>CATCH</b> to score!
+      </p>
+
+      <div class="how-to-box">
+        <h3>How to Play</h3>
+
+        <ul>
+          <li>Allow camera access.</li>
+          <li>Green chilies will spawn randomly on screen.</li>
+          <li>Aim the central marker at a chili.</li>
+          <li>Press <b>CATCH</b> to score — or tap a chili directly!</li>
+          <li>Chilies disappear after a few seconds, so be quick!</li>
+          <li>Collect the highest score in 60 seconds!</li>
+        </ul>
+      </div>
+
+      <button id="startBtn" class="primary-btn">
+        Start Game
+      </button>
+
+    </div>
+  </section>
+
+  <!-- RESULT SCREEN -->
+  <section id="resultScreen" class="screen">
+    <div class="result-card">
+
+      <div class="logo-badge">
+        <img
+          src="assets/images/chili-green.png"
+          alt="Green Chili"
+          class="logo-image"
+        />
+      </div>
+
+      <h1>Time's Up!</h1>
+
+      <p class="result-label">Your Final Score</p>
+
+      <div id="finalScoreText" class="final-score">0</div>
+
+      <div id="topFiveInfo" class="top-five-info hidden">
+        Your score made it into the Top 5!
+      </div>
+
+      <div class="leaderboard-box">
+        <h3>Leaderboard</h3>
+        <div id="leaderboardList" class="leaderboard-list"></div>
+      </div>
+
+      <button id="shareBtn" class="secondary-btn">
+        Share Score Image
+      </button>
+
+      <button id="saveScoreBtn" class="secondary-btn">
+        Save Score
+      </button>
+
+      <button id="playAgainBtn" class="primary-btn">
+        Play Again
+      </button>
+
+    </div>
+  </section>
+
+  <!-- APP NOTICE -->
+  <div id="appNotice" class="app-notice hidden" role="dialog" aria-modal="true" aria-labelledby="appNoticeTitle">
+    <div class="app-notice-card">
+      <h2 id="appNoticeTitle">Permission Needed</h2>
+      <p id="appNoticeText">
+        Motion access is needed to search for green chilies.
+      </p>
+      <button id="closeAppNoticeBtn" class="primary-btn">
+        Close
+      </button>
+    </div>
+  </div>
+
+  <!-- SAVE SCORE MODAL -->
+  <div id="saveScoreModal" class="save-modal hidden">
+    <div class="save-modal-card">
+      <h2>Save Your Score</h2>
+
+      <p class="modal-score-label">Your Score</p>
+      <div id="modalScoreText" class="modal-score-value">0</div>
+
+      <label class="name-label" for="playerNameInput">
+        Your Name
+      </label>
+
+      <input
+        id="playerNameInput"
+        class="name-input"
+        type="text"
+        maxlength="100"
+        placeholder="Enter your name"
+      />
+
+      <label class="name-label email-label" for="playerEmailInput">
+        Your Email
+      </label>
+
+      <input
+        id="playerEmailInput"
+        class="name-input"
+        type="email"
+        maxlength="150"
+        placeholder="Enter your email"
+      />
+
+      <p class="email-note">
+        Please use a valid email. This email will be used for score redemption.
+      </p>
+
+      <div id="saveMessage" class="save-message"></div>
+
+      <button id="submitScoreBtn" class="primary-btn">
+        Save
+      </button>
+
+      <button id="closeSaveModalBtn" class="secondary-btn">
+        Cancel
+      </button>
+    </div>
+  </div>
+
+  <script src="js/game.js"></script>
+</body>
+</html>
