@@ -459,31 +459,52 @@ function stopCamera() {
 async function startXRSession() {
   if (!navigator.xr || !xrCanvas) return false;
 
+  const supported = await navigator.xr.isSessionSupported("immersive-ar").catch(() => false);
+  if (!supported) return false;
+
   try {
-    xrGl = xrCanvas.getContext("webgl", {
-      xrCompatible: true,
-      alpha: true,
-      antialias: true
-    });
+    if (!xrGl) {
+      xrGl = xrCanvas.getContext("webgl", {
+        xrCompatible: true,
+        alpha: true,
+        antialias: false
+      });
+    }
 
     if (!xrGl) return false;
 
+    xrCanvas.addEventListener("webglcontextlost", (e) => {
+      e.preventDefault();
+      xrTextures.clear();
+    }, { once: true });
+
     xrSession = await navigator.xr.requestSession("immersive-ar", {
-      optionalFeatures: ["dom-overlay", "local-floor"],
+      requiredFeatures: ["dom-overlay"],
+      optionalFeatures: ["local-floor"],
       domOverlay: {
         root: document.body
       }
     });
 
+    if (!xrSession.domOverlayState) {
+      await xrSession.end().catch(() => {});
+      return false;
+    }
+
     await xrGl.makeXRCompatible();
     xrSession.updateRenderState({
       baseLayer: new XRWebGLLayer(xrSession, xrGl, {
         alpha: true,
-        antialias: true
+        antialias: false
       })
     });
 
-    xrRefSpace = await xrSession.requestReferenceSpace("local");
+    try {
+      xrRefSpace = await xrSession.requestReferenceSpace("local");
+    } catch {
+      xrRefSpace = await xrSession.requestReferenceSpace("viewer");
+    }
+
     setupXRRenderer();
     await loadXRTextures();
 
@@ -499,7 +520,7 @@ async function startXRSession() {
     xrSession.requestAnimationFrame(onXRFrame);
     return true;
   } catch (error) {
-    console.warn("WebXR AR unavailable, falling back:", error);
+    console.warn("WebXR AR unavailable:", error.name, error.message);
     stopXRSession(false);
     return false;
   }
@@ -584,7 +605,6 @@ function loadXRTexture(src) {
     image.onload = () => {
       const texture = xrGl.createTexture();
       xrGl.bindTexture(xrGl.TEXTURE_2D, texture);
-      xrGl.pixelStorei(xrGl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
       xrGl.texImage2D(xrGl.TEXTURE_2D, 0, xrGl.RGBA, xrGl.RGBA, xrGl.UNSIGNED_BYTE, image);
       xrGl.texParameteri(xrGl.TEXTURE_2D, xrGl.TEXTURE_WRAP_S, xrGl.CLAMP_TO_EDGE);
       xrGl.texParameteri(xrGl.TEXTURE_2D, xrGl.TEXTURE_WRAP_T, xrGl.CLAMP_TO_EDGE);
@@ -838,6 +858,15 @@ function stopXRSession(endSession = true) {
   xrLastRefillAt = 0;
   document.body.classList.remove("xr-mode");
 
+  if (xrGl) {
+    if (xrProgram) { xrGl.deleteProgram(xrProgram); xrProgram = null; }
+    if (xrPositionBuffer) { xrGl.deleteBuffer(xrPositionBuffer); xrPositionBuffer = null; }
+    if (xrUvBuffer) { xrGl.deleteBuffer(xrUvBuffer); xrUvBuffer = null; }
+    xrTextures.forEach((tex) => xrGl.deleteTexture(tex));
+    xrTextures.clear();
+    xrGl = null;
+  }
+
   if (xrSession && endSession) {
     xrSession.end().catch(() => {});
   }
@@ -1009,14 +1038,6 @@ async function startGame() {
   const xrReady = await startXRSession();
 
   if (!xrReady) {
-    if (isAndroidDevice()) {
-      showAppNotice(
-        "WebXR AR Required",
-        "Please open this game in Chrome on an ARCore-supported Android device over HTTPS."
-      );
-      return;
-    }
-
     const cameraReady = await startCamera();
     if (!cameraReady) return;
 
