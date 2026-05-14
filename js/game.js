@@ -1254,10 +1254,10 @@ function endGame() {
 
   scoreSaved = false;
   topFiveInfo.classList.add("hidden");
-  saveScoreBtn.classList.add("hidden");
+  saveScoreBtn.classList.remove("hidden");
   startPlayAgainCooldown();
 
-  renderLocalResult();
+  loadLeaderboard();
 
   stopOrientationTracking();
   stopXRSession();
@@ -1764,7 +1764,14 @@ function createPlusOne(x, y) {
 ========================= */
 
 async function loadLeaderboard() {
-  renderLocalResult();
+  try {
+    const data = await fetchJson(GET_LEADERBOARD_API);
+    const leaderboard = normalizeLeaderboardResponse(data);
+    renderLeaderboard(leaderboard);
+  } catch (error) {
+    console.warn("Leaderboard unavailable:", error);
+    renderLocalResult();
+  }
 }
 
 function renderLeaderboard(leaderboard) {
@@ -1787,17 +1794,25 @@ function renderLeaderboard(leaderboard) {
     const row = document.createElement("div");
     row.className = "leaderboard-item";
 
-    const safeName = escapeHtml(item.name || "Player");
-    const safeScore = Number(item.total_score || 0);
+    const safeName = escapeHtml(item.name || item.player_name || "Player");
+    const safeScore = Number(item.total_score ?? item.score ?? item.time_seconds ?? item.time ?? 0);
 
     row.innerHTML = `
       <span class="leaderboard-rank">#${index + 1}</span>
       <span class="leaderboard-name">${safeName}</span>
-      <span class="leaderboard-score">${safeScore}</span>
+      <span class="leaderboard-score">${formatElapsedTime(safeScore)}</span>
     `;
 
     leaderboardList.appendChild(row);
   });
+}
+
+function normalizeLeaderboardResponse(data) {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.leaderboard)) return data.leaderboard;
+  if (Array.isArray(data?.data)) return data.data;
+  if (Array.isArray(data?.results)) return data.results;
+  return [];
 }
 
 function renderLocalResult() {
@@ -1856,9 +1871,63 @@ function closeAppNotice() {
   appNotice.classList.add("hidden");
 }
 
-function submitScore() {
-  saveMessage.textContent = "Online score saving is disabled for now.";
-  saveMessage.className = "save-message error";
+async function submitScore() {
+  if (scoreSaved) return;
+
+  const name = playerNameInput.value.trim();
+  const email = playerEmailInput.value.trim();
+
+  if (!name) {
+    saveMessage.textContent = "Please enter your name.";
+    saveMessage.className = "save-message error";
+    playerNameInput.focus();
+    return;
+  }
+
+  if (!isValidEmail(email)) {
+    saveMessage.textContent = "Please enter a valid email.";
+    saveMessage.className = "save-message error";
+    playerEmailInput.focus();
+    return;
+  }
+
+  submitScoreBtn.disabled = true;
+  saveMessage.textContent = "Saving score...";
+  saveMessage.className = "save-message";
+
+  try {
+    await fetchJson(SAVE_SCORE_API, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        name,
+        email,
+        total_score: elapsedTime,
+        time_seconds: elapsedTime,
+        collected_chilies: TARGET_SCORE
+      })
+    });
+
+    scoreSaved = true;
+    saveMessage.textContent = "Score saved successfully.";
+    saveMessage.className = "save-message success";
+    saveScoreBtn.classList.add("hidden");
+    topFiveInfo.textContent = "Score saved to leaderboard";
+    topFiveInfo.classList.remove("hidden");
+    await loadLeaderboard();
+
+    setTimeout(() => {
+      closeSaveScoreModal();
+    }, 700);
+  } catch (error) {
+    console.error("Save score error:", error);
+    saveMessage.textContent = error.message || "Unable to save score. Please try again.";
+    saveMessage.className = "save-message error";
+  } finally {
+    submitScoreBtn.disabled = false;
+  }
 }
 
 /* =========================
