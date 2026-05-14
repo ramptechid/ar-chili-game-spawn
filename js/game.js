@@ -98,15 +98,17 @@ const CHILI_LIFETIME_MIN  = 5000;
 const CHILI_LIFETIME_MAX  = 9000;
 const NEXT_CHILI_OVERLAP_MIN = 1200;
 const NEXT_CHILI_OVERLAP_MAX = 2200;
-const WORLD_RANGE_H = 44;
-const WORLD_RANGE_V = 26;
+const WORLD_RANGE_H = 24;
+const WORLD_RANGE_V = 16;
+const MIN_CHILI_SCREEN_DISTANCE = 180;
 
 // Pixels per 1° of phone rotation
 const PX_PER_DEG_H = window.innerWidth  / 28;
 const PX_PER_DEG_V = window.innerHeight / 36;
 
 // Exponential smoothing factor for orientation (lower = smoother, less shake)
-const ORIENT_SMOOTH = 0.08;
+const ORIENT_SMOOTH = 0.24;
+const ORIENT_DEADZONE = 0.035;
 
 /* =========================
    STATE
@@ -221,8 +223,8 @@ function startOrientationLoop() {
     }
 
     // Exponential moving average — smooths out sensor noise
-    smoothGamma += ORIENT_SMOOTH * (rawGamma - smoothGamma);
-    smoothBeta  += ORIENT_SMOOTH * (rawBeta  - smoothBeta);
+    smoothGamma = smoothAngle(smoothGamma, rawGamma);
+    smoothBeta  = smoothAngle(smoothBeta, rawBeta);
 
     repositionChilies();
     orientLoopId = requestAnimationFrame(loop);
@@ -533,9 +535,10 @@ function spawnChili(nearView = false) {
     const rangeV = nearView ? 7 : WORLD_RANGE_V;
     const centerGamma = nearView ? smoothGamma : baseGamma;
     const centerBeta = nearView ? smoothBeta : baseBeta;
+    const spawnPosition = getSpacedWorldSpawn(centerGamma, centerBeta, rangeH, rangeV);
 
-    chili.dataset.wg = centerGamma + randF(-rangeH, rangeH);
-    chili.dataset.wb = centerBeta + randF(-rangeV, rangeV);
+    chili.dataset.wg = spawnPosition.wg;
+    chili.dataset.wb = spawnPosition.wb;
     projectWorldChili(chili);
   } else {
     const topLimit    = 160;
@@ -583,6 +586,52 @@ function expireChili(chili) {
   setTimeout(() => {
     if (chili.parentElement) chili.remove();
   }, 380);
+}
+
+function getSpacedWorldSpawn(centerGamma, centerBeta, rangeH, rangeV) {
+  let best = null;
+  let bestDistance = -Infinity;
+
+  for (let i = 0; i < 24; i++) {
+    const candidate = {
+      wg: centerGamma + randF(-rangeH, rangeH),
+      wb: centerBeta + randF(-rangeV, rangeV)
+    };
+    const distance = getNearestChiliScreenDistance(candidate.wg, candidate.wb);
+
+    if (distance >= MIN_CHILI_SCREEN_DISTANCE) {
+      return candidate;
+    }
+
+    if (distance > bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+
+  return best || {
+    wg: centerGamma + randF(-rangeH, rangeH),
+    wb: centerBeta + randF(-rangeV, rangeV)
+  };
+}
+
+function getNearestChiliScreenDistance(wg, wb) {
+  const cx = window.innerWidth / 2;
+  const cy = window.innerHeight / 2;
+  const x = cx + (wg - smoothGamma) * PX_PER_DEG_H;
+  const y = cy + (wb - smoothBeta) * PX_PER_DEG_V;
+  let nearest = Infinity;
+
+  document.querySelectorAll(".chili:not(.chili-expire)").forEach((chili) => {
+    if (chili.dataset.caught === "true") return;
+
+    const rect = chili.getBoundingClientRect();
+    const chiliX = rect.left + rect.width / 2;
+    const chiliY = rect.top + rect.height / 2;
+    nearest = Math.min(nearest, getDistance(x, y, chiliX, chiliY));
+  });
+
+  return nearest;
 }
 
 /* =========================
@@ -1082,8 +1131,14 @@ function getDistance(x1, y1, x2, y2) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
+function smoothAngle(current, target) {
+  const delta = target - current;
+
+  if (Math.abs(delta) <= ORIENT_DEADZONE) {
+    return current;
+  }
+
+  return current + ORIENT_SMOOTH * delta;
 }
 
 function randomNumber(min, max) {
