@@ -684,7 +684,7 @@ function renderXRObjects(view) {
     } else if (object.expiring) {
       const t = clamp((now - object.expireStartedAt) / XR_EXPIRE_MS, 0, 1);
       alpha = 1 - t;
-      scale = 1 - t * 0.45;
+      scale = 1 - t * 0.92;
     } else if (object.fadeIn) {
       const t = clamp((now - object.fadeInStart) / XR_FADEIN_MS, 0, 1);
       alpha = t;
@@ -765,16 +765,17 @@ function spawnXRObject(nearView = true) {
 
   const size = randF(XR_SIZE_MIN, XR_SIZE_MAX);
   const now = performance.now();
+  const anchoredPosition = Object.freeze([
+    cameraPosition[0] + dirX * distance,
+    cameraPosition[1] + heightOffset,
+    cameraPosition[2] + dirZ * distance
+  ]);
 
-  // Position is fully anchored in world space — player must move to find objects
+  // Position is fully anchored in world space after spawn.
   xrObjects.push({
     asset,
     isTarget: !!asset.isTarget,
-    position: [
-      cameraPosition[0] + dirX * distance,
-      cameraPosition[1] + heightOffset,
-      cameraPosition[2] + dirZ * distance
-    ],
+    position: anchoredPosition,
     size,
     createdAt: now,
     lifetime: randomNumber(9000, 18000),
