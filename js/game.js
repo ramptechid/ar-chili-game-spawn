@@ -110,13 +110,10 @@ const OFFSCREEN_EXPIRE_MS = 900;
 const OFFSCREEN_MARGIN = 140;
 const XR_MAX_ACTIVE_OBJECTS = 38;
 const XR_INITIAL_OBJECTS = 28;
-const XR_SIZE_MIN = 0.22;
-const XR_SIZE_MAX = 0.38;
+const XR_SIZE_MIN = 0.32;
+const XR_SIZE_MAX = 0.32;
 const XR_DISTANCE_MIN = 1.5;
 const XR_DISTANCE_MAX = 1.5;
-const XR_NEAR_SCALE_DISTANCE = 0.45;
-const XR_FAR_SCALE_DISTANCE = 1.5;
-const XR_APPROACH_SCALE_BOOST = 1.25;
 const XR_CATCH_ANIM_MS = 480;
 const XR_FADEIN_MS = 320;
 const XR_EXPIRE_MS = 520;
@@ -504,9 +501,9 @@ async function startXRSession() {
     });
 
     try {
-      xrRefSpace = await xrSession.requestReferenceSpace("local");
-    } catch {
       xrRefSpace = await xrSession.requestReferenceSpace("local-floor");
+    } catch {
+      xrRefSpace = await xrSession.requestReferenceSpace("local");
     }
 
     setupXRRenderer();
@@ -647,11 +644,11 @@ function onXRFrame(time, frame) {
   for (const xrView of pose.views) {
     const viewport = layer.getViewport(xrView);
     xrGl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
-    renderXRObjects(xrView);
+    renderXRObjects(xrView, pose.transform.matrix);
   }
 }
 
-function renderXRObjects(view) {
+function renderXRObjects(view, viewerMatrix) {
   xrGl.useProgram(xrProgram);
 
   const positionLocation = xrGl.getAttribLocation(xrProgram, "a_position");
@@ -668,7 +665,6 @@ function renderXRObjects(view) {
   const alphaLocation = xrGl.getUniformLocation(xrProgram, "u_alpha");
   const textureLocation = xrGl.getUniformLocation(xrProgram, "u_texture");
   const viewProjection = multiplyMat4(view.projectionMatrix, view.transform.inverse.matrix);
-  const cameraMatrix = view.transform.matrix;
   const now = performance.now();
 
   xrObjects.forEach((object) => {
@@ -680,7 +676,7 @@ function renderXRObjects(view) {
     if (object.catching) {
       const t = clamp((now - object.catchStartAt) / XR_CATCH_ANIM_MS, 0, 1);
       alpha = 1 - t;
-      scale = 1 - t * 0.5;
+      scale = 1;
     } else if (object.expiring) {
       const t = clamp((now - object.expireStartedAt) / XR_EXPIRE_MS, 0, 1);
       alpha = 1 - t;
@@ -688,14 +684,13 @@ function renderXRObjects(view) {
     } else if (object.fadeIn) {
       const t = clamp((now - object.fadeInStart) / XR_FADEIN_MS, 0, 1);
       alpha = t;
-      scale = 0.55 + t * 0.45;
+      scale = 1;
       if (t >= 1) object.fadeIn = false;
     }
 
     if (alpha <= 0.01) return;
 
-    scale *= getXRApproachScale(object, cameraMatrix);
-    const modelMatrix = makeBillboardMatrix(object, cameraMatrix, scale);
+    const modelMatrix = makeBillboardMatrix(object, viewerMatrix, scale);
     const matrix = multiplyMat4(viewProjection, modelMatrix);
 
     xrGl.activeTexture(xrGl.TEXTURE0);
@@ -725,7 +720,7 @@ function runXRSpawner() {
   }, SPAWN_REFILL_INTERVAL);
 }
 
-function spawnXRObject(nearView = true) {
+function spawnXRObject(nearView = false) {
   if (!xrLastPose || getActiveXRObjectCount() >= XR_MAX_ACTIVE_OBJECTS) return;
 
   const asset = getSpawnAssetXR();
@@ -2062,17 +2057,6 @@ function multiplyMat4(a, b) {
   }
 
   return out;
-}
-
-function getXRApproachScale(object, cameraMatrix) {
-  const dx = object.position[0] - cameraMatrix[12];
-  const dy = object.position[1] - cameraMatrix[13];
-  const dz = object.position[2] - cameraMatrix[14];
-  const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-  const range = Math.max(0.001, XR_FAR_SCALE_DISTANCE - XR_NEAR_SCALE_DISTANCE);
-  const closeness = clamp((XR_FAR_SCALE_DISTANCE - distance) / range, 0, 1);
-
-  return 1 + closeness * XR_APPROACH_SCALE_BOOST;
 }
 
 function makeBillboardMatrix(object, cameraMatrix, scale = 1) {
