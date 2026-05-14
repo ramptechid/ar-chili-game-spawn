@@ -92,19 +92,27 @@ const leaderboardList = document.getElementById("leaderboardList");
    GAME CONFIG
 ========================= */
 
-const GAME_DURATION = 60;
+const GAME_DURATION       = 60;
 const PLAY_AGAIN_COOLDOWN = 5;
-const SPAWN_SPEED = 900;
-const CHILI_LIFETIME_MIN = 4000;
-const CHILI_LIFETIME_MAX = 7000;
-const CHILI_TARGET_COUNT = 6;
+const SPAWN_SPEED         = 800;
+const CHILI_LIFETIME_MIN  = 5000;
+const CHILI_LIFETIME_MAX  = 9000;
 
-// Pixels per degree of phone rotation (sensitivity)
-const PX_PER_DEG_H = window.innerWidth / 32;
-const PX_PER_DEG_V = window.innerHeight / 42;
+// How many chilies exist on-screen when no orientation sensor
+const CHILI_SCREEN_COUNT  = 6;
+// How many chilies exist in the full AR world when orientation is active
+const CHILI_WORLD_COUNT   = 10;
 
-// Smoothing factor: 0.0 = frozen, 1.0 = instant (no smooth)
-const ORIENT_SMOOTH = 0.07;
+// Virtual world search radius (in degrees) around starting orientation
+const WORLD_RANGE_H = 44;   // ±degrees horizontal
+const WORLD_RANGE_V = 26;   // ±degrees vertical
+
+// Pixels per 1° of phone rotation
+const PX_PER_DEG_H = window.innerWidth  / 28;
+const PX_PER_DEG_V = window.innerHeight / 36;
+
+// Exponential smoothing factor for orientation (lower = smoother, less shake)
+const ORIENT_SMOOTH = 0.08;
 
 /* =========================
    STATE
@@ -231,17 +239,20 @@ function startOrientationLoop() {
 function repositionChilies() {
   if (baseGamma === null) return;
 
-  const dGamma = smoothGamma - baseGamma;
-  const dBeta  = smoothBeta  - baseBeta;
+  const cx = window.innerWidth  / 2;
+  const cy = window.innerHeight / 2;
 
   document.querySelectorAll(".chili").forEach((chili) => {
     if (chili.dataset.caught === "true") return;
+    if (chili.dataset.wg === undefined) return; // screen-fixed, skip
 
-    const wx = parseFloat(chili.dataset.worldX);
-    const wy = parseFloat(chili.dataset.worldY);
+    const wg = parseFloat(chili.dataset.wg);
+    const wb = parseFloat(chili.dataset.wb);
+    const hs = parseFloat(chili.dataset.hs);
 
-    chili.style.left = `${wx - dGamma * PX_PER_DEG_H}px`;
-    chili.style.top  = `${wy + dBeta  * PX_PER_DEG_V}px`;
+    // Project world angle → screen pixel position
+    chili.style.left = `${cx + (wg - smoothGamma) * PX_PER_DEG_H - hs}px`;
+    chili.style.top  = `${cy - (wb - smoothBeta)  * PX_PER_DEG_V - hs}px`;
   });
 }
 
@@ -370,21 +381,28 @@ function runTimer() {
 function runSpawner() {
   clearInterval(spawnInterval);
 
-  // Spawn initial batch staggered
-  for (let i = 0; i < CHILI_TARGET_COUNT; i++) {
-    setTimeout(() => {
-      if (gameRunning) spawnChili();
-    }, i * 300);
-  }
+  // Wait briefly for orientation sensor to initialise before first spawn
+  setTimeout(() => {
+    if (!gameRunning) return;
 
-  // Keep spawning to maintain target count
+    const arMode     = baseGamma !== null;
+    const total      = arMode ? CHILI_WORLD_COUNT : CHILI_SCREEN_COUNT;
+    const nearCount  = arMode ? 3 : total; // first 3 spawn near camera view
+
+    for (let i = 0; i < total; i++) {
+      setTimeout(() => {
+        if (gameRunning) spawnChili(i < nearCount);
+      }, i * 200);
+    }
+  }, 600);
+
+  // Continuously maintain target chili count in the world
   spawnInterval = setInterval(() => {
     if (!gameRunning) return;
 
+    const target  = baseGamma !== null ? CHILI_WORLD_COUNT : CHILI_SCREEN_COUNT;
     const current = document.querySelectorAll(".chili:not(.chili-expire)").length;
-    if (current < CHILI_TARGET_COUNT) {
-      spawnChili();
-    }
+    if (current < target) spawnChili(false);
   }, SPAWN_SPEED);
 }
 
@@ -482,39 +500,52 @@ function clearPlayAgainCooldown() {
    CHILI SPAWNING
 ========================= */
 
-function spawnChili() {
+// nearView=true → spawn inside current camera frame
+// nearView=false → spawn anywhere in the virtual world (may be off-screen)
+function spawnChili(nearView = false) {
   const size = randomNumber(60, 92);
-
-  const topLimit = 160;
-  const bottomLimit = window.innerHeight - 200;
-  const leftLimit = 20;
-  const rightLimit = window.innerWidth - size - 20;
-
-  if (bottomLimit <= topLimit || rightLimit <= leftLimit) return;
-
-  const x = randomNumber(leftLimit, rightLimit);
-  const y = randomNumber(topLimit, bottomLimit);
+  const hs   = size / 2;
 
   const chili = document.createElement("img");
-  chili.src = "assets/images/chili-green.png";
+  chili.src       = "assets/images/chili-green.png";
   chili.className = "chili";
-  chili.alt = "Green Chili";
-
-  // Convert screen spawn position to world coordinates (bakes in current pan)
-  const dGamma = baseGamma !== null ? currentGamma - baseGamma : 0;
-  const dBeta  = baseGamma !== null ? currentBeta  - baseBeta  : 0;
-  const worldX = x + dGamma * PX_PER_DEG_H;
-  const worldY = y - dBeta  * PX_PER_DEG_V;
-
+  chili.alt       = "Green Chili";
   chili.style.width  = `${size}px`;
-  chili.style.left   = `${x}px`;
-  chili.style.top    = `${y}px`;
   chili.style.rotate = `${randomNumber(-35, 35)}deg`;
-  chili.dataset.worldX  = worldX;
-  chili.dataset.worldY  = worldY;
-  chili.dataset.caught  = "false";
+  chili.dataset.caught = "false";
+  chili.dataset.hs     = hs;
 
-  // Tap directly on chili to catch it
+  if (baseGamma !== null) {
+    // ── AR MODE: world angle coordinates ──────────────────────────────────
+    // Near-view: keep within the visible screen (~±12° H, ±8° V)
+    // World: spread up to WORLD_RANGE around the base orientation
+    const rangeH = nearView ? 11 : WORLD_RANGE_H;
+    const rangeV = nearView ? 7  : WORLD_RANGE_V;
+
+    const wg = (nearView ? smoothGamma : baseGamma) + randF(-rangeH, rangeH);
+    const wb = (nearView ? smoothBeta  : baseBeta)  + randF(-rangeV, rangeV);
+
+    chili.dataset.wg = wg;
+    chili.dataset.wb = wb;
+
+    const cx = window.innerWidth  / 2;
+    const cy = window.innerHeight / 2;
+    chili.style.left = `${cx + (wg - smoothGamma) * PX_PER_DEG_H - hs}px`;
+    chili.style.top  = `${cy - (wb - smoothBeta)  * PX_PER_DEG_V - hs}px`;
+  } else {
+    // ── SCREEN MODE fallback (no gyroscope) ──────────────────────────────
+    const topLimit    = 160;
+    const bottomLimit = window.innerHeight - 200;
+    const leftLimit   = 20;
+    const rightLimit  = window.innerWidth - size - 20;
+
+    if (bottomLimit <= topLimit || rightLimit <= leftLimit) return;
+
+    chili.style.left = `${randomNumber(leftLimit, rightLimit)}px`;
+    chili.style.top  = `${randomNumber(topLimit,  bottomLimit)}px`;
+    // No world anchor — chili stays fixed on screen
+  }
+
   chili.addEventListener("pointerdown", (e) => {
     e.stopPropagation();
     if (!gameRunning || chili.dataset.caught === "true") return;
@@ -525,7 +556,6 @@ function spawnChili() {
   gameArea.appendChild(chili);
 
   const duration = randomNumber(CHILI_LIFETIME_MIN, CHILI_LIFETIME_MAX);
-
   setTimeout(() => {
     if (chili.parentElement && chili.dataset.caught !== "true") {
       expireChili(chili);
@@ -1024,4 +1054,9 @@ function getDistance(x1, y1, x2, y2) {
 
 function randomNumber(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+// Random float in [min, max]
+function randF(min, max) {
+  return Math.random() * (max - min) + min;
 }
