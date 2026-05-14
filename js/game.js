@@ -250,9 +250,29 @@ function repositionChilies() {
     const hs = parseFloat(chili.dataset.hs);
 
     // Project world angle → screen pixel position (signs flipped: camera toward chili = chili to center)
-    chili.style.left = `${cx - (wg - smoothGamma) * PX_PER_DEG_H - hs}px`;
+    // When the player turns toward the chili, this delta shrinks and the
+    // chili moves into the marker instead of sliding away from it.
+    chili.style.left = `${cx + (wg - smoothGamma) * PX_PER_DEG_H - hs}px`;
     chili.style.top  = `${cy + (wb - smoothBeta)  * PX_PER_DEG_V - hs}px`;
+    updateChiliDepthStyle(chili, wg - smoothGamma, wb - smoothBeta);
   });
+
+  autoCollectChiliByMarker();
+}
+
+function updateChiliDepthStyle(chili, deltaGamma, deltaBeta) {
+  const baseDepth = parseFloat(chili.dataset.depth || "1");
+  const angularDistance = Math.sqrt(deltaGamma * deltaGamma + deltaBeta * deltaBeta);
+  const centerFactor = clamp(1 - angularDistance / 18, 0, 1);
+  const visualDepth = baseDepth * (0.82 + centerFactor * 0.45);
+  const brightness = (0.74 + visualDepth * 0.24).toFixed(2);
+  const saturate = (0.78 + visualDepth * 0.28).toFixed(2);
+  const shadowY = Math.round(visualDepth * 14);
+  const shadowBlur = Math.round(visualDepth * 20);
+  const shadowAlpha = (0.16 + visualDepth * 0.42).toFixed(2);
+
+  chili.style.scale = visualDepth.toFixed(3);
+  chili.style.filter = `brightness(${brightness}) saturate(${saturate}) drop-shadow(0 ${shadowY}px ${shadowBlur}px rgba(0,0,0,${shadowAlpha}))`;
 }
 
 /* =========================
@@ -510,6 +530,7 @@ function spawnChili(nearView = false) {
   chili.style.zIndex = Math.round(depth * 10);
   chili.dataset.caught = "false";
   chili.dataset.hs     = hs;
+  chili.dataset.depth  = depth.toFixed(3);
 
   if (baseGamma !== null) {
     // AR mode: world angle coordinates
@@ -524,8 +545,9 @@ function spawnChili(nearView = false) {
 
     const cx = window.innerWidth  / 2;
     const cy = window.innerHeight / 2;
-    chili.style.left = `${cx - (wg - smoothGamma) * PX_PER_DEG_H - hs}px`;
+    chili.style.left = `${cx + (wg - smoothGamma) * PX_PER_DEG_H - hs}px`;
     chili.style.top  = `${cy + (wb - smoothBeta)  * PX_PER_DEG_V - hs}px`;
+    updateChiliDepthStyle(chili, wg - smoothGamma, wb - smoothBeta);
   } else {
     // Screen fallback (no gyroscope)
     const topLimit    = 160;
@@ -556,7 +578,7 @@ function spawnChili(nearView = false) {
     const shadowY     = Math.round(depth * 14);
     const shadowBlur  = Math.round(depth * 20);
     const shadowAlpha = (0.18 + depth * 0.45).toFixed(2);
-    chili.style.transform = `scale(${depth.toFixed(3)})`;
+    chili.style.scale     = depth.toFixed(3);
     chili.style.filter    = `brightness(${brightness}) saturate(${saturate}) drop-shadow(0 ${shadowY}px ${shadowBlur}px rgba(0,0,0,${shadowAlpha}))`;
   }, 300);
 
@@ -582,12 +604,31 @@ function expireChili(chili) {
 function catchChiliByMarker() {
   if (!gameRunning) return;
 
+  const targetHit = findChiliInMarker();
+
+  if (targetHit) {
+    collectChili(targetHit.chili, targetHit.x, targetHit.y);
+  } else {
+    showMissEffect();
+  }
+}
+
+function autoCollectChiliByMarker() {
+  if (!gameRunning) return;
+
+  const targetHit = findChiliInMarker();
+
+  if (targetHit) {
+    collectChili(targetHit.chili, targetHit.x, targetHit.y);
+  }
+}
+
+function findChiliInMarker() {
   const target = document.querySelector(".aim-area");
   const chilies = document.querySelectorAll(".chili:not(.chili-expire)");
 
   if (!target || chilies.length === 0) {
-    showMissEffect();
-    return;
+    return null;
   }
 
   const targetRect = target.getBoundingClientRect();
@@ -618,10 +659,14 @@ function catchChiliByMarker() {
   });
 
   if (closestChili) {
-    collectChili(closestChili, closestX, closestY);
-  } else {
-    showMissEffect();
+    return {
+      chili: closestChili,
+      x: closestX,
+      y: closestY
+    };
   }
+
+  return null;
 }
 
 function collectChili(chili, x, y) {
@@ -1055,6 +1100,10 @@ function getDistance(x1, y1, x2, y2) {
   const dy = y2 - y1;
 
   return Math.sqrt(dx * dx + dy * dy);
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function randomNumber(min, max) {
