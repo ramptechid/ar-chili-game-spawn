@@ -108,8 +108,12 @@ const MIN_VISIBLE_CHILIES = 10;
 const VIEW_REFILL_COOLDOWN = 450;
 const OFFSCREEN_EXPIRE_MS = 900;
 const OFFSCREEN_MARGIN = 140;
-const XR_MAX_ACTIVE_OBJECTS = 38;
-const XR_INITIAL_OBJECTS = 28;
+const XR_MAX_ACTIVE_OBJECTS = 24;
+const XR_INITIAL_OBJECTS = 6;
+const XR_SPAWN_DELAY_MIN = 650;
+const XR_SPAWN_DELAY_MAX = 1500;
+const XR_LIFETIME_MIN = 8500;
+const XR_LIFETIME_MAX = 22000;
 const XR_SIZE_MIN = 0.32;
 const XR_SIZE_MAX = 0.32;
 const XR_DISTANCE_MIN = 1.5;
@@ -208,6 +212,8 @@ let xrLastView = null;
 let xrLastViewProjection = null;
 let xrLastRefillAt = 0;
 let xrSpawnInterval = null;
+let xrSpawnTimeout = null;
+let xrInitialSpawnTimeouts = [];
 let nextXRExpireAt = 0;
 let voiceActive = false;
 let voiceStream = null;
@@ -694,7 +700,6 @@ function onXRFrame(time, frame) {
   xrLastViewProjection = multiplyMat4(view.projectionMatrix, view.transform.inverse.matrix);
 
   expireXRObjects(time);
-  refillXRCurrentView(time);
 
   for (const xrView of pose.views) {
     const viewport = layer.getViewport(xrView);
@@ -764,20 +769,41 @@ function renderXRObjects(view) {
 
 function runXRSpawner() {
   clearInterval(xrSpawnInterval);
+  clearTimeout(xrSpawnTimeout);
+  xrInitialSpawnTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
+  xrSpawnInterval = null;
+  xrSpawnTimeout = null;
+  xrInitialSpawnTimeouts = [];
+
+  let initialDelay = 350;
 
   for (let i = 0; i < XR_INITIAL_OBJECTS; i++) {
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
+      xrInitialSpawnTimeouts = xrInitialSpawnTimeouts.filter((id) => id !== timeoutId);
       if (gameRunning && xrActive) spawnXRObject(false);
-    }, 300 + i * randomNumber(120, 260));
+    }, initialDelay);
+    xrInitialSpawnTimeouts.push(timeoutId);
+
+    initialDelay += randomNumber(XR_SPAWN_DELAY_MIN, XR_SPAWN_DELAY_MAX);
   }
 
-  xrSpawnInterval = setInterval(() => {
-    if (!gameRunning || !xrActive) return;
+  scheduleNextXRSpawn(initialDelay + randomNumber(200, 600));
+}
 
-    if (getActiveXRObjectCount() < XR_MAX_ACTIVE_OBJECTS) {
+function scheduleNextXRSpawn(delay = randomNumber(XR_SPAWN_DELAY_MIN, XR_SPAWN_DELAY_MAX)) {
+  clearTimeout(xrSpawnTimeout);
+
+  xrSpawnTimeout = setTimeout(() => {
+    xrSpawnTimeout = null;
+
+    if (gameRunning && xrActive && getActiveXRObjectCount() < XR_MAX_ACTIVE_OBJECTS) {
       spawnXRObject(false);
     }
-  }, SPAWN_REFILL_INTERVAL);
+
+    if (gameRunning && xrActive) {
+      scheduleNextXRSpawn();
+    }
+  }, delay);
 }
 
 function spawnXRObject(nearView = false) {
@@ -834,7 +860,7 @@ function spawnXRObject(nearView = false) {
     size,
     yaw: randF(0, Math.PI * 2),
     createdAt: now,
-    lifetime: randomNumber(9000, 18000),
+    lifetime: randomNumber(XR_LIFETIME_MIN, XR_LIFETIME_MAX),
     caught: false,
     catching: false,
     expiring: false,
@@ -965,7 +991,11 @@ function collectXRObject(object) {
 function stopXRSession(endSession = true) {
   xrActive = false;
   clearInterval(xrSpawnInterval);
+  clearTimeout(xrSpawnTimeout);
+  xrInitialSpawnTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
   xrSpawnInterval = null;
+  xrSpawnTimeout = null;
+  xrInitialSpawnTimeouts = [];
   xrObjects = [];
   xrLastPose = null;
   xrLastView = null;
