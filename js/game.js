@@ -99,6 +99,10 @@ const CHILI_LIFETIME_MIN = 4000;
 const CHILI_LIFETIME_MAX = 7000;
 const CHILI_TARGET_COUNT = 6;
 
+// Pixels per degree of phone rotation (sensitivity)
+const PX_PER_DEG_H = window.innerWidth / 28;
+const PX_PER_DEG_V = window.innerHeight / 38;
+
 /* =========================
    STATE
 ========================= */
@@ -115,6 +119,14 @@ let playAgainCooldownInterval = null;
 let cameraStarted = false;
 let cameraStream = null;
 
+// Device orientation for world-anchoring chilies
+let orientationActive = false;
+let baseGamma = null;
+let baseBeta = null;
+let currentGamma = 0;
+let currentBeta = 0;
+let rafPending = false;
+
 document.body.classList.add("intro-mode");
 
 /* =========================
@@ -130,6 +142,83 @@ saveScoreBtn.addEventListener("click", openSaveScoreModal);
 closeSaveModalBtn.addEventListener("click", closeSaveScoreModal);
 submitScoreBtn.addEventListener("click", submitScore);
 closeAppNoticeBtn.addEventListener("click", closeAppNotice);
+
+/* =========================
+   DEVICE ORIENTATION (world-anchor chilies)
+========================= */
+
+async function startOrientationTracking() {
+  if (orientationActive) return;
+
+  // iOS 13+ requires explicit permission
+  if (
+    typeof DeviceOrientationEvent !== "undefined" &&
+    typeof DeviceOrientationEvent.requestPermission === "function"
+  ) {
+    try {
+      const perm = await DeviceOrientationEvent.requestPermission();
+      if (perm !== "granted") return;
+    } catch (e) {
+      return;
+    }
+  }
+
+  orientationActive = true;
+  baseGamma = null;
+  baseBeta = null;
+  window.addEventListener("deviceorientation", handleOrientation, true);
+}
+
+function stopOrientationTracking() {
+  if (!orientationActive) return;
+  orientationActive = false;
+  window.removeEventListener("deviceorientation", handleOrientation, true);
+  baseGamma = null;
+  baseBeta = null;
+}
+
+function handleOrientation(event) {
+  if (!gameRunning) return;
+
+  const gamma = event.gamma ?? 0;
+  const beta = event.beta ?? 0;
+
+  if (baseGamma === null) {
+    baseGamma = gamma;
+    baseBeta = beta;
+    currentGamma = gamma;
+    currentBeta = beta;
+    return;
+  }
+
+  currentGamma = gamma;
+  currentBeta = beta;
+
+  if (!rafPending) {
+    rafPending = true;
+    requestAnimationFrame(() => {
+      repositionChilies();
+      rafPending = false;
+    });
+  }
+}
+
+function repositionChilies() {
+  if (baseGamma === null) return;
+
+  const dGamma = currentGamma - baseGamma;
+  const dBeta = currentBeta - baseBeta;
+
+  document.querySelectorAll(".chili").forEach((chili) => {
+    if (chili.dataset.caught === "true") return;
+
+    const wx = parseFloat(chili.dataset.worldX);
+    const wy = parseFloat(chili.dataset.worldY);
+
+    chili.style.left = `${wx - dGamma * PX_PER_DEG_H}px`;
+    chili.style.top  = `${wy + dBeta  * PX_PER_DEG_V}px`;
+  });
+}
 
 /* =========================
    CAMERA
@@ -195,6 +284,9 @@ async function startGame() {
   if (!cameraReady) {
     return;
   }
+
+  // Start orientation tracking so chilies are world-anchored (non-blocking)
+  startOrientationTracking();
 
   resetGameData();
 
@@ -291,6 +383,7 @@ function endGame() {
 
   loadLeaderboard();
 
+  stopOrientationTracking();
   stopCamera();
 
   document.body.classList.remove("game-mode");
@@ -308,6 +401,7 @@ function resetToIntro() {
 
   gameArea.innerHTML = "";
 
+  stopOrientationTracking();
   stopCamera();
 
   score = 0;
@@ -381,11 +475,19 @@ function spawnChili() {
   chili.className = "chili";
   chili.alt = "Green Chili";
 
-  chili.style.width = `${size}px`;
-  chili.style.left = `${x}px`;
-  chili.style.top = `${y}px`;
+  // Convert screen spawn position to world coordinates (bakes in current pan)
+  const dGamma = baseGamma !== null ? currentGamma - baseGamma : 0;
+  const dBeta  = baseGamma !== null ? currentBeta  - baseBeta  : 0;
+  const worldX = x + dGamma * PX_PER_DEG_H;
+  const worldY = y - dBeta  * PX_PER_DEG_V;
+
+  chili.style.width  = `${size}px`;
+  chili.style.left   = `${x}px`;
+  chili.style.top    = `${y}px`;
   chili.style.rotate = `${randomNumber(-35, 35)}deg`;
-  chili.dataset.caught = "false";
+  chili.dataset.worldX  = worldX;
+  chili.dataset.worldY  = worldY;
+  chili.dataset.caught  = "false";
 
   // Tap directly on chili to catch it
   chili.addEventListener("pointerdown", (e) => {
