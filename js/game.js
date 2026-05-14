@@ -98,17 +98,17 @@ const CHILI_LIFETIME_MIN  = 3600;
 const CHILI_LIFETIME_MAX  = 12500;
 const NEXT_CHILI_OVERLAP_MIN = 900;
 const NEXT_CHILI_OVERLAP_MAX = 2400;
-const MAX_ACTIVE_CHILIES = 12;
-const INITIAL_CHILI_COUNT = 9;
-const SPAWN_REFILL_INTERVAL = 900;
+const MAX_ACTIVE_CHILIES = 18;
+const INITIAL_CHILI_COUNT = 14;
+const SPAWN_REFILL_INTERVAL = 520;
 const CHILI_SIZE_MIN = 34;
 const CHILI_SIZE_MAX = 82;
 const WORLD_RANGE_H = 24;
 const WORLD_RANGE_V = 16;
-const MIN_CHILI_SCREEN_DISTANCE = 78;
+const MIN_CHILI_SCREEN_DISTANCE = 36;
 const DEPTH_MIN = 0.58;
 const DEPTH_MAX = 1.1;
-const TARGET_SPAWN_RATIO = 0.2;
+const TARGET_SPAWN_RATIO = 0.12;
 const MIN_TARGET_CHILIES = 1;
 
 const TARGET_ASSET = {
@@ -450,14 +450,14 @@ function runSpawner() {
   clearSpawnTimers();
 
   for (let i = 0; i < INITIAL_CHILI_COUNT; i++) {
-    scheduleNextChili(350 + i * randomNumber(180, 420), i < 2);
+    scheduleNextChili(260 + i * randomNumber(90, 230), i < 1);
   }
 
   spawnInterval = setInterval(() => {
     if (!gameRunning) return;
 
     if (getActiveChiliCount() < MAX_ACTIVE_CHILIES) {
-      scheduleNextChili(randomNumber(120, 520), false);
+      scheduleNextChili(randomNumber(80, 360), false);
     }
   }, SPAWN_REFILL_INTERVAL);
 }
