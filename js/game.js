@@ -106,12 +106,15 @@ const MIN_VISIBLE_CHILIES = 10;
 const VIEW_REFILL_COOLDOWN = 450;
 const OFFSCREEN_EXPIRE_MS = 900;
 const OFFSCREEN_MARGIN = 140;
-const XR_MAX_ACTIVE_OBJECTS = 18;
-const XR_INITIAL_OBJECTS = 12;
-const XR_SIZE_MIN = 0.07;
-const XR_SIZE_MAX = 0.14;
+const XR_MAX_ACTIVE_OBJECTS = 38;
+const XR_INITIAL_OBJECTS = 28;
+const XR_SIZE_MIN = 0.14;
+const XR_SIZE_MAX = 0.3;
 const XR_DISTANCE_MIN = 1.2;
 const XR_DISTANCE_MAX = 4.2;
+const XR_NEAR_SCALE_DISTANCE = 0.85;
+const XR_FAR_SCALE_DISTANCE = 4.2;
+const XR_APPROACH_SCALE_BOOST = 0.9;
 const XR_CATCH_ANIM_MS = 480;
 const XR_FADEIN_MS = 320;
 const XR_EXPIRE_MS = 520;
@@ -685,6 +688,7 @@ function renderXRObjects(view) {
 
     if (alpha <= 0.01) return;
 
+    scale *= getXRApproachScale(object, cameraMatrix);
     const modelMatrix = makeBillboardMatrix(object, cameraMatrix, scale);
     const matrix = multiplyMat4(viewProjection, modelMatrix);
 
@@ -2025,6 +2029,17 @@ function multiplyMat4(a, b) {
   }
 
   return out;
+}
+
+function getXRApproachScale(object, cameraMatrix) {
+  const dx = object.position[0] - cameraMatrix[12];
+  const dy = object.position[1] - cameraMatrix[13];
+  const dz = object.position[2] - cameraMatrix[14];
+  const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  const range = XR_FAR_SCALE_DISTANCE - XR_NEAR_SCALE_DISTANCE;
+  const closeness = clamp((XR_FAR_SCALE_DISTANCE - distance) / range, 0, 1);
+
+  return 1 + closeness * XR_APPROACH_SCALE_BOOST;
 }
 
 function makeBillboardMatrix(object, cameraMatrix, scale = 1) {
