@@ -1009,6 +1009,14 @@ async function startGame() {
   const xrReady = await startXRSession();
 
   if (!xrReady) {
+    if (isAndroidDevice()) {
+      showAppNotice(
+        "WebXR AR Required",
+        "Please open this game in Chrome on an ARCore-supported Android device over HTTPS."
+      );
+      return;
+    }
+
     const cameraReady = await startCamera();
     if (!cameraReady) return;
 
@@ -1888,6 +1896,10 @@ function isIjoCommand(text) {
   return normalized
     .split(" ")
     .some((word) => word === "ijo" || word === "hijau");
+}
+
+function isAndroidDevice() {
+  return /Android/i.test(navigator.userAgent);
 }
 
 function roundRect(ctx, x, y, width, height, radius) {
