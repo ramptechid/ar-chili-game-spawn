@@ -250,9 +250,9 @@ function repositionChilies() {
     const wb = parseFloat(chili.dataset.wb);
     const hs = parseFloat(chili.dataset.hs);
 
-    // Project world angle → screen pixel position
-    chili.style.left = `${cx + (wg - smoothGamma) * PX_PER_DEG_H - hs}px`;
-    chili.style.top  = `${cy - (wb - smoothBeta)  * PX_PER_DEG_V - hs}px`;
+    // Project world angle → screen pixel position (signs flipped: camera toward chili = chili to center)
+    chili.style.left = `${cx - (wg - smoothGamma) * PX_PER_DEG_H - hs}px`;
+    chili.style.top  = `${cy + (wb - smoothBeta)  * PX_PER_DEG_V - hs}px`;
   });
 }
 
@@ -530,8 +530,8 @@ function spawnChili(nearView = false) {
 
     const cx = window.innerWidth  / 2;
     const cy = window.innerHeight / 2;
-    chili.style.left = `${cx + (wg - smoothGamma) * PX_PER_DEG_H - hs}px`;
-    chili.style.top  = `${cy - (wb - smoothBeta)  * PX_PER_DEG_V - hs}px`;
+    chili.style.left = `${cx - (wg - smoothGamma) * PX_PER_DEG_H - hs}px`;
+    chili.style.top  = `${cy + (wb - smoothBeta)  * PX_PER_DEG_V - hs}px`;
   } else {
     // ── SCREEN MODE fallback (no gyroscope) ──────────────────────────────
     const topLimit    = 160;
