@@ -94,20 +94,27 @@ const leaderboardList = document.getElementById("leaderboardList");
 
 const GAME_DURATION       = 60;
 const PLAY_AGAIN_COOLDOWN = 5;
-const CHILI_LIFETIME_MIN  = 5000;
-const CHILI_LIFETIME_MAX  = 9000;
-const NEXT_CHILI_OVERLAP_MIN = 1200;
-const NEXT_CHILI_OVERLAP_MAX = 2200;
+const CHILI_LIFETIME_MIN  = 4200;
+const CHILI_LIFETIME_MAX  = 11000;
+const NEXT_CHILI_OVERLAP_MIN = 900;
+const NEXT_CHILI_OVERLAP_MAX = 2400;
+const MAX_ACTIVE_CHILIES = 7;
+const INITIAL_CHILI_COUNT = 5;
+const SPAWN_REFILL_INTERVAL = 700;
+const CHILI_SIZE_MIN = 48;
+const CHILI_SIZE_MAX = 110;
 const WORLD_RANGE_H = 24;
 const WORLD_RANGE_V = 16;
 const MIN_CHILI_SCREEN_DISTANCE = 180;
+const DEPTH_MIN = 0.55;
+const DEPTH_MAX = 1.35;
 
 // Pixels per 1° of phone rotation
 const PX_PER_DEG_H = window.innerWidth  / 28;
 const PX_PER_DEG_V = window.innerHeight / 36;
 
 // Exponential smoothing factor for orientation (lower = smoother, less shake)
-const ORIENT_SMOOTH = 0.24;
+const ORIENT_SMOOTH = 0.2;
 const ORIENT_DEADZONE = 0.035;
 
 /* =========================
@@ -251,9 +258,28 @@ function projectWorldChili(chili) {
   const wg = parseFloat(chili.dataset.wg);
   const wb = parseFloat(chili.dataset.wb);
   const hs = parseFloat(chili.dataset.hs);
+  const deltaGamma = wg - smoothGamma;
+  const deltaBeta = wb - smoothBeta;
 
-  chili.style.left = `${cx - (wg - smoothGamma) * PX_PER_DEG_H - hs}px`;
-  chili.style.top = `${cy - (wb - smoothBeta) * PX_PER_DEG_V - hs}px`;
+  chili.style.left = `${cx - deltaGamma * PX_PER_DEG_H - hs}px`;
+  chili.style.top = `${cy - deltaBeta * PX_PER_DEG_V - hs}px`;
+  updateChili3DStyle(chili, deltaGamma, deltaBeta);
+}
+
+function updateChili3DStyle(chili, deltaGamma, deltaBeta) {
+  const depth = parseFloat(chili.dataset.depth || "1");
+  const angularDistance = Math.sqrt(deltaGamma * deltaGamma + deltaBeta * deltaBeta);
+  const centerFactor = clamp(1 - angularDistance / 22, 0, 1);
+  const visualScale = depth * (0.86 + centerFactor * 0.22);
+  const brightness = (0.76 + visualScale * 0.2).toFixed(2);
+  const saturate = (0.82 + visualScale * 0.22).toFixed(2);
+  const shadowY = Math.round(8 + visualScale * 12);
+  const shadowBlur = Math.round(14 + visualScale * 20);
+  const shadowAlpha = (0.22 + visualScale * 0.28).toFixed(2);
+
+  chili.style.scale = visualScale.toFixed(3);
+  chili.style.zIndex = Math.round(visualScale * 100);
+  chili.style.filter = `brightness(${brightness}) saturate(${saturate}) drop-shadow(0 ${shadowY}px ${shadowBlur}px rgba(0,0,0,${shadowAlpha}))`;
 }
 
 function resetAimMarker() {
@@ -385,18 +411,26 @@ function runTimer() {
 
 function runSpawner() {
   clearSpawnTimers();
-  scheduleNextChili(600, true);
+
+  for (let i = 0; i < INITIAL_CHILI_COUNT; i++) {
+    scheduleNextChili(450 + i * randomNumber(260, 620), i < 2);
+  }
+
+  spawnInterval = setInterval(() => {
+    if (!gameRunning) return;
+
+    if (getActiveChiliCount() < MAX_ACTIVE_CHILIES) {
+      spawnChili(false);
+    }
+  }, SPAWN_REFILL_INTERVAL);
 }
 
 function scheduleNextChili(delay, nearView = false) {
-  spawnTimeouts.forEach((timeoutId) => {
-    clearTimeout(timeoutId);
-  });
-  spawnTimeouts = [];
-
   const timeoutId = setTimeout(() => {
     spawnTimeouts = spawnTimeouts.filter((id) => id !== timeoutId);
-    if (gameRunning) spawnChili(nearView);
+    if (gameRunning && getActiveChiliCount() < MAX_ACTIVE_CHILIES) {
+      spawnChili(nearView);
+    }
   }, delay);
 
   spawnTimeouts.push(timeoutId);
@@ -509,15 +543,16 @@ function clearPlayAgainCooldown() {
 ========================= */
 
 function spawnChili(nearView = false) {
+  if (getActiveChiliCount() >= MAX_ACTIVE_CHILIES) return;
+
   if (orientationActive && baseGamma === null) {
     scheduleNextChili(250, nearView);
     return;
   }
 
-  const size  = randomNumber(60, 92);
+  const size  = randomNumber(CHILI_SIZE_MIN, CHILI_SIZE_MAX);
   const hs    = size / 2;
-  // depth: 0.45 = far/small/dark, 1.2 = near/big/bright
-  const depth = randF(0.45, 1.2);
+  const depth = randF(DEPTH_MIN, DEPTH_MAX);
 
   const chili = document.createElement("img");
   chili.src       = "assets/images/chili-green.png";
@@ -548,8 +583,9 @@ function spawnChili(nearView = false) {
 
     if (bottomLimit <= topLimit || rightLimit <= leftLimit) return;
 
-    chili.style.left = `${randomNumber(leftLimit, rightLimit)}px`;
-    chili.style.top  = `${randomNumber(topLimit,  bottomLimit)}px`;
+    const spawnPosition = getSpacedScreenSpawn(leftLimit, rightLimit, topLimit, bottomLimit);
+    chili.style.left = `${spawnPosition.x}px`;
+    chili.style.top  = `${spawnPosition.y}px`;
   }
 
   chili.addEventListener("pointerdown", (e) => {
@@ -558,16 +594,24 @@ function spawnChili(nearView = false) {
 
   gameArea.appendChild(chili);
 
-  // Apply depth-based 3D illusion after spawn pop animation completes
+  if (baseGamma !== null) {
+    projectWorldChili(chili);
+  }
+
   setTimeout(() => {
     if (!chili.parentElement) return;
-    const brightness  = (0.78 + depth * 0.22).toFixed(2);
-    const saturate    = (0.80 + depth * 0.25).toFixed(2);
-    const shadowY     = Math.round(depth * 14);
-    const shadowBlur  = Math.round(depth * 20);
-    const shadowAlpha = (0.18 + depth * 0.45).toFixed(2);
-    chili.style.scale     = depth.toFixed(3);
-    chili.style.filter    = `brightness(${brightness}) saturate(${saturate}) drop-shadow(0 ${shadowY}px ${shadowBlur}px rgba(0,0,0,${shadowAlpha}))`;
+    if (chili.dataset.wg !== undefined) {
+      projectWorldChili(chili);
+      return;
+    }
+
+    const brightness = (0.78 + depth * 0.2).toFixed(2);
+    const saturate = (0.82 + depth * 0.22).toFixed(2);
+    const shadowY = Math.round(8 + depth * 12);
+    const shadowBlur = Math.round(14 + depth * 20);
+    const shadowAlpha = (0.22 + depth * 0.28).toFixed(2);
+    chili.style.scale = depth.toFixed(3);
+    chili.style.filter = `brightness(${brightness}) saturate(${saturate}) drop-shadow(0 ${shadowY}px ${shadowBlur}px rgba(0,0,0,${shadowAlpha}))`;
   }, 300);
 
   const duration = randomNumber(CHILI_LIFETIME_MIN, CHILI_LIFETIME_MAX);
@@ -586,6 +630,10 @@ function expireChili(chili) {
   setTimeout(() => {
     if (chili.parentElement) chili.remove();
   }, 380);
+}
+
+function getActiveChiliCount() {
+  return document.querySelectorAll(".chili:not(.chili-expire)").length;
 }
 
 function getSpacedWorldSpawn(centerGamma, centerBeta, rangeH, rangeV) {
@@ -620,6 +668,48 @@ function getNearestChiliScreenDistance(wg, wb) {
   const cy = window.innerHeight / 2;
   const x = cx - (wg - smoothGamma) * PX_PER_DEG_H;
   const y = cy - (wb - smoothBeta) * PX_PER_DEG_V;
+  let nearest = Infinity;
+
+  document.querySelectorAll(".chili:not(.chili-expire)").forEach((chili) => {
+    if (chili.dataset.caught === "true") return;
+
+    const rect = chili.getBoundingClientRect();
+    const chiliX = rect.left + rect.width / 2;
+    const chiliY = rect.top + rect.height / 2;
+    nearest = Math.min(nearest, getDistance(x, y, chiliX, chiliY));
+  });
+
+  return nearest;
+}
+
+function getSpacedScreenSpawn(leftLimit, rightLimit, topLimit, bottomLimit) {
+  let best = null;
+  let bestDistance = -Infinity;
+
+  for (let i = 0; i < 24; i++) {
+    const candidate = {
+      x: randomNumber(leftLimit, rightLimit),
+      y: randomNumber(topLimit, bottomLimit)
+    };
+    const distance = getNearestChiliPointDistance(candidate.x, candidate.y);
+
+    if (distance >= MIN_CHILI_SCREEN_DISTANCE) {
+      return candidate;
+    }
+
+    if (distance > bestDistance) {
+      best = candidate;
+      bestDistance = distance;
+    }
+  }
+
+  return best || {
+    x: randomNumber(leftLimit, rightLimit),
+    y: randomNumber(topLimit, bottomLimit)
+  };
+}
+
+function getNearestChiliPointDistance(x, y) {
   let nearest = Infinity;
 
   document.querySelectorAll(".chili:not(.chili-expire)").forEach((chili) => {
@@ -1139,6 +1229,10 @@ function smoothAngle(current, target) {
   }
 
   return current + ORIENT_SMOOTH * delta;
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
 }
 
 function randomNumber(min, max) {

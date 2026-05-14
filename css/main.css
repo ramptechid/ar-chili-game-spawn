@@ -79,6 +79,8 @@ body.xr-mode .camera-overlay {
   inset: 0;
   z-index: 6;
   overflow: hidden;
+  perspective: 900px;
+  transform-style: preserve-3d;
 }
 
 /* CHILI ITEM */
@@ -90,6 +92,14 @@ body.xr-mode .camera-overlay {
   user-select: none;
   -webkit-user-drag: none;
   touch-action: manipulation;
+  transform-origin: 50% 58%;
+  transform-style: preserve-3d;
+  will-change: left, top, scale, filter;
+  transition:
+    left 90ms linear,
+    top 90ms linear,
+    scale 120ms ease,
+    filter 120ms ease;
   filter:
     drop-shadow(0 8px 18px rgba(0, 0, 0, 0.55))
     drop-shadow(0 2px 6px rgba(0, 180, 60, 0.25));
@@ -199,4 +209,3 @@ body.xr-mode .camera-overlay {
     opacity: 0;
   }
 }
-
