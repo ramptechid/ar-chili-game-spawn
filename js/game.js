@@ -101,6 +101,10 @@ const NEXT_CHILI_OVERLAP_MAX = 2400;
 const MAX_ACTIVE_CHILIES = 18;
 const INITIAL_CHILI_COUNT = 14;
 const SPAWN_REFILL_INTERVAL = 520;
+const MIN_VISIBLE_CHILIES = 8;
+const VIEW_REFILL_COOLDOWN = 450;
+const OFFSCREEN_EXPIRE_MS = 900;
+const OFFSCREEN_MARGIN = 140;
 const CHILI_SIZE_MIN = 34;
 const CHILI_SIZE_MAX = 82;
 const WORLD_RANGE_H = 24;
@@ -167,6 +171,7 @@ let timerInterval = null;
 let spawnInterval = null;
 let spawnTimeouts = [];
 let playAgainCooldownInterval = null;
+let lastViewRefillAt = 0;
 
 let cameraStarted = false;
 let cameraStream = null;
@@ -285,7 +290,10 @@ function repositionChilies() {
     if (chili.dataset.wg === undefined) return;
 
     projectWorldChili(chili);
+    updateOffscreenExpiry(chili);
   });
+
+  refillCurrentViewIfNeeded();
 }
 
 function projectWorldChili(chili) {
@@ -317,6 +325,39 @@ function updateChili3DStyle(chili, deltaGamma, deltaBeta) {
   chili.style.scale = visualScale.toFixed(3);
   chili.style.zIndex = Math.round(visualScale * 100);
   chili.style.filter = `brightness(${brightness}) saturate(${saturate}) drop-shadow(0 ${shadowY}px ${shadowBlur}px rgba(0,0,0,${shadowAlpha}))`;
+}
+
+function updateOffscreenExpiry(chili) {
+  if (chili.classList.contains("chili-expire")) return;
+
+  const rect = chili.getBoundingClientRect();
+  const isVisible = isRectInViewport(rect, OFFSCREEN_MARGIN);
+
+  if (isVisible) {
+    delete chili.dataset.offscreenSince;
+    return;
+  }
+
+  const now = Date.now();
+
+  if (chili.dataset.offscreenSince === undefined) {
+    chili.dataset.offscreenSince = now;
+    return;
+  }
+
+  if (now - Number(chili.dataset.offscreenSince) >= OFFSCREEN_EXPIRE_MS) {
+    expireChili(chili);
+  }
+}
+
+function refillCurrentViewIfNeeded() {
+  if (!gameRunning || baseGamma === null) return;
+  if (Date.now() - lastViewRefillAt < VIEW_REFILL_COOLDOWN) return;
+  if (getVisibleChiliCount() >= MIN_VISIBLE_CHILIES) return;
+  if (getActiveChiliCount() >= MAX_ACTIVE_CHILIES) return;
+
+  lastViewRefillAt = Date.now();
+  spawnChili(true);
 }
 
 function resetAimMarker() {
@@ -473,6 +514,7 @@ function clearSpawnTimers() {
     clearTimeout(timeoutId);
   });
   spawnTimeouts = [];
+  lastViewRefillAt = 0;
 }
 
 function endGame() {
@@ -599,8 +641,8 @@ function spawnChili(nearView = false) {
   if (baseGamma !== null) {
     const rangeH = nearView ? 10 : WORLD_RANGE_H;
     const rangeV = nearView ? 7 : WORLD_RANGE_V;
-    const centerGamma = nearView ? smoothGamma : baseGamma;
-    const centerBeta = nearView ? smoothBeta : baseBeta;
+    const centerGamma = smoothGamma;
+    const centerBeta = smoothBeta;
     const spawnPosition = getSpacedWorldSpawn(centerGamma, centerBeta, rangeH, rangeV);
 
     chili.dataset.wg = spawnPosition.wg;
@@ -665,6 +707,20 @@ function expireChili(chili) {
 
 function getActiveChiliCount() {
   return document.querySelectorAll(".chili:not(.chili-expire)").length;
+}
+
+function getVisibleChiliCount() {
+  let visibleCount = 0;
+
+  document.querySelectorAll(".chili:not(.chili-expire)").forEach((chili) => {
+    if (chili.dataset.caught === "true") return;
+
+    if (isRectInViewport(chili.getBoundingClientRect(), 40)) {
+      visibleCount++;
+    }
+  });
+
+  return visibleCount;
 }
 
 function getActiveTargetCount() {
@@ -776,6 +832,15 @@ function getNearestChiliPointDistance(x, y) {
   });
 
   return nearest;
+}
+
+function isRectInViewport(rect, margin = 0) {
+  return (
+    rect.right >= -margin &&
+    rect.left <= window.innerWidth + margin &&
+    rect.bottom >= -margin &&
+    rect.top <= window.innerHeight + margin
+  );
 }
 
 /* =========================
