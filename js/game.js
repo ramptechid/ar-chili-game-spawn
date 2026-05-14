@@ -99,17 +99,17 @@ const CHILI_LIFETIME_MIN  = 3600;
 const CHILI_LIFETIME_MAX  = 12500;
 const NEXT_CHILI_OVERLAP_MIN = 900;
 const NEXT_CHILI_OVERLAP_MAX = 2400;
-const MAX_ACTIVE_CHILIES = 18;
-const INITIAL_CHILI_COUNT = 14;
-const SPAWN_REFILL_INTERVAL = 520;
-const MIN_VISIBLE_CHILIES = 8;
+const MAX_ACTIVE_CHILIES = 32;
+const INITIAL_CHILI_COUNT = 26;
+const SPAWN_REFILL_INTERVAL = 420;
+const MIN_VISIBLE_CHILIES = 10;
 const VIEW_REFILL_COOLDOWN = 450;
 const OFFSCREEN_EXPIRE_MS = 900;
 const OFFSCREEN_MARGIN = 140;
-const XR_SIZE_MIN = 0.14;
-const XR_SIZE_MAX = 0.26;
-const XR_DISTANCE_MIN = 1.5;
-const XR_DISTANCE_MAX = 3.5;
+const XR_SIZE_MIN = 0.15;
+const XR_SIZE_MAX = 0.28;
+const XR_DISTANCE_MIN = 1.2;
+const XR_DISTANCE_MAX = 4.2;
 const XR_CATCH_ANIM_MS = 480;
 const XR_FADEIN_MS = 320;
 const XR_EXPIRE_MS = 520;
@@ -748,10 +748,22 @@ function spawnXRObject(nearView = true) {
   const dirZ = nfZ * ca + nrZ * sa;
 
   const distance = randF(XR_DISTANCE_MIN, XR_DISTANCE_MAX);
-  const heightOffset = randF(-0.55, 0.3);
+
+  // Spread objects vertically: floor (-1.5m), mid, ceiling (+1.8m)
+  const heightZone = Math.random();
+  let heightOffset;
+  if (heightZone < 0.28) {
+    heightOffset = randF(-1.6, -0.8);  // low / floor level
+  } else if (heightZone < 0.56) {
+    heightOffset = randF(-0.3, 0.4);   // eye level / middle
+  } else {
+    heightOffset = randF(0.7, 1.8);    // high / above head
+  }
+
   const size = randF(XR_SIZE_MIN, XR_SIZE_MAX);
   const now = performance.now();
 
+  // Position is fully anchored in world space — player must move to find objects
   xrObjects.push({
     asset,
     isTarget: !!asset.isTarget,
