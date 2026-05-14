@@ -56,6 +56,7 @@ async function fetchJson(url, options = {}) {
 ========================= */
 
 const cameraView = document.getElementById("cameraView");
+const xrCanvas = document.getElementById("xrCanvas");
 const gameArea = document.getElementById("gameArea");
 
 const introScreen = document.getElementById("introScreen");
@@ -177,6 +178,20 @@ let lastViewRefillAt = 0;
 
 let cameraStarted = false;
 let cameraStream = null;
+let xrActive = false;
+let xrSession = null;
+let xrRefSpace = null;
+let xrGl = null;
+let xrProgram = null;
+let xrPositionBuffer = null;
+let xrUvBuffer = null;
+let xrTextures = new Map();
+let xrObjects = [];
+let xrLastPose = null;
+let xrLastView = null;
+let xrLastViewProjection = null;
+let xrLastRefillAt = 0;
+let xrSpawnInterval = null;
 let voiceActive = false;
 let voiceStream = null;
 let voiceRecognition = null;
@@ -433,6 +448,400 @@ function stopCamera() {
 }
 
 /* =========================
+   WEBXR AR
+========================= */
+
+async function startXRSession() {
+  if (!navigator.xr || !xrCanvas) return false;
+
+  try {
+    xrGl = xrCanvas.getContext("webgl", {
+      xrCompatible: true,
+      alpha: true,
+      antialias: true
+    });
+
+    if (!xrGl) return false;
+
+    xrSession = await navigator.xr.requestSession("immersive-ar", {
+      optionalFeatures: ["dom-overlay", "local-floor"],
+      domOverlay: {
+        root: document.body
+      }
+    });
+
+    await xrGl.makeXRCompatible();
+    xrSession.updateRenderState({
+      baseLayer: new XRWebGLLayer(xrSession, xrGl, {
+        alpha: true,
+        antialias: true
+      })
+    });
+
+    xrRefSpace = await xrSession.requestReferenceSpace("local");
+    setupXRRenderer();
+    await loadXRTextures();
+
+    xrObjects = [];
+    xrActive = true;
+    document.body.classList.add("xr-mode");
+
+    xrSession.addEventListener("end", () => {
+      stopXRSession(false);
+      if (gameRunning) endGame();
+    });
+
+    xrSession.requestAnimationFrame(onXRFrame);
+    return true;
+  } catch (error) {
+    console.warn("WebXR AR unavailable, falling back:", error);
+    stopXRSession(false);
+    return false;
+  }
+}
+
+function setupXRRenderer() {
+  const vertexShader = createXRShader(xrGl.VERTEX_SHADER, `
+    attribute vec2 a_position;
+    attribute vec2 a_uv;
+    uniform mat4 u_matrix;
+    varying vec2 v_uv;
+
+    void main() {
+      v_uv = a_uv;
+      gl_Position = u_matrix * vec4(a_position, 0.0, 1.0);
+    }
+  `);
+  const fragmentShader = createXRShader(xrGl.FRAGMENT_SHADER, `
+    precision mediump float;
+    uniform sampler2D u_texture;
+    uniform float u_alpha;
+    varying vec2 v_uv;
+
+    void main() {
+      vec4 color = texture2D(u_texture, v_uv);
+      gl_FragColor = vec4(color.rgb, color.a * u_alpha);
+    }
+  `);
+
+  xrProgram = xrGl.createProgram();
+  xrGl.attachShader(xrProgram, vertexShader);
+  xrGl.attachShader(xrProgram, fragmentShader);
+  xrGl.linkProgram(xrProgram);
+
+  xrPositionBuffer = xrGl.createBuffer();
+  xrGl.bindBuffer(xrGl.ARRAY_BUFFER, xrPositionBuffer);
+  xrGl.bufferData(
+    xrGl.ARRAY_BUFFER,
+    new Float32Array([
+      -0.5, -0.5,
+       0.5, -0.5,
+      -0.5,  0.5,
+       0.5,  0.5
+    ]),
+    xrGl.STATIC_DRAW
+  );
+
+  xrUvBuffer = xrGl.createBuffer();
+  xrGl.bindBuffer(xrGl.ARRAY_BUFFER, xrUvBuffer);
+  xrGl.bufferData(
+    xrGl.ARRAY_BUFFER,
+    new Float32Array([
+      0, 1,
+      1, 1,
+      0, 0,
+      1, 0
+    ]),
+    xrGl.STATIC_DRAW
+  );
+
+  xrGl.enable(xrGl.BLEND);
+  xrGl.blendFunc(xrGl.SRC_ALPHA, xrGl.ONE_MINUS_SRC_ALPHA);
+}
+
+function createXRShader(type, source) {
+  const shader = xrGl.createShader(type);
+  xrGl.shaderSource(shader, source);
+  xrGl.compileShader(shader);
+  return shader;
+}
+
+async function loadXRTextures() {
+  const assets = [TARGET_ASSET, ...DECOY_ASSETS];
+  await Promise.all(assets.map((asset) => loadXRTexture(asset.src)));
+}
+
+function loadXRTexture(src) {
+  if (xrTextures.has(src)) return Promise.resolve(xrTextures.get(src));
+
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const texture = xrGl.createTexture();
+      xrGl.bindTexture(xrGl.TEXTURE_2D, texture);
+      xrGl.pixelStorei(xrGl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+      xrGl.texImage2D(xrGl.TEXTURE_2D, 0, xrGl.RGBA, xrGl.RGBA, xrGl.UNSIGNED_BYTE, image);
+      xrGl.texParameteri(xrGl.TEXTURE_2D, xrGl.TEXTURE_WRAP_S, xrGl.CLAMP_TO_EDGE);
+      xrGl.texParameteri(xrGl.TEXTURE_2D, xrGl.TEXTURE_WRAP_T, xrGl.CLAMP_TO_EDGE);
+      xrGl.texParameteri(xrGl.TEXTURE_2D, xrGl.TEXTURE_MIN_FILTER, xrGl.LINEAR);
+      xrGl.texParameteri(xrGl.TEXTURE_2D, xrGl.TEXTURE_MAG_FILTER, xrGl.LINEAR);
+      xrTextures.set(src, texture);
+      resolve(texture);
+    };
+    image.onerror = reject;
+    image.src = src;
+  });
+}
+
+function onXRFrame(time, frame) {
+  if (!xrSession || !xrRefSpace) return;
+
+  xrSession.requestAnimationFrame(onXRFrame);
+
+  const pose = frame.getViewerPose(xrRefSpace);
+  if (!pose) return;
+
+  xrLastPose = pose;
+
+  const layer = xrSession.renderState.baseLayer;
+  xrGl.bindFramebuffer(xrGl.FRAMEBUFFER, layer.framebuffer);
+  xrGl.clearColor(0, 0, 0, 0);
+  xrGl.clear(xrGl.COLOR_BUFFER_BIT | xrGl.DEPTH_BUFFER_BIT);
+
+  const view = pose.views[0];
+  xrLastView = view;
+  xrLastViewProjection = multiplyMat4(view.projectionMatrix, view.transform.inverse.matrix);
+
+  expireXRObjects(time);
+  refillXRCurrentView(time);
+
+  for (const xrView of pose.views) {
+    const viewport = layer.getViewport(xrView);
+    xrGl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
+    renderXRObjects(xrView);
+  }
+}
+
+function renderXRObjects(view) {
+  xrGl.useProgram(xrProgram);
+
+  const positionLocation = xrGl.getAttribLocation(xrProgram, "a_position");
+  xrGl.bindBuffer(xrGl.ARRAY_BUFFER, xrPositionBuffer);
+  xrGl.enableVertexAttribArray(positionLocation);
+  xrGl.vertexAttribPointer(positionLocation, 2, xrGl.FLOAT, false, 0, 0);
+
+  const uvLocation = xrGl.getAttribLocation(xrProgram, "a_uv");
+  xrGl.bindBuffer(xrGl.ARRAY_BUFFER, xrUvBuffer);
+  xrGl.enableVertexAttribArray(uvLocation);
+  xrGl.vertexAttribPointer(uvLocation, 2, xrGl.FLOAT, false, 0, 0);
+
+  const matrixLocation = xrGl.getUniformLocation(xrProgram, "u_matrix");
+  const alphaLocation = xrGl.getUniformLocation(xrProgram, "u_alpha");
+  const textureLocation = xrGl.getUniformLocation(xrProgram, "u_texture");
+  const viewProjection = multiplyMat4(view.projectionMatrix, view.transform.inverse.matrix);
+  const cameraMatrix = view.transform.matrix;
+  const now = performance.now();
+
+  xrObjects.forEach((object) => {
+    if (object.caught) return;
+
+    const modelMatrix = makeBillboardMatrix(object, cameraMatrix);
+    const matrix = multiplyMat4(viewProjection, modelMatrix);
+    const alpha = object.expiring ? Math.max(0, 1 - (now - object.expireStartedAt) / 380) : 1;
+
+    xrGl.activeTexture(xrGl.TEXTURE0);
+    xrGl.bindTexture(xrGl.TEXTURE_2D, xrTextures.get(object.asset.src));
+    xrGl.uniform1i(textureLocation, 0);
+    xrGl.uniform1f(alphaLocation, alpha);
+    xrGl.uniformMatrix4fv(matrixLocation, false, matrix);
+    xrGl.drawArrays(xrGl.TRIANGLE_STRIP, 0, 4);
+  });
+}
+
+function runXRSpawner() {
+  clearInterval(xrSpawnInterval);
+
+  for (let i = 0; i < INITIAL_CHILI_COUNT; i++) {
+    setTimeout(() => {
+      if (gameRunning && xrActive) spawnXRObject(i < 1);
+    }, 260 + i * randomNumber(90, 230));
+  }
+
+  xrSpawnInterval = setInterval(() => {
+    if (!gameRunning || !xrActive) return;
+
+    if (getActiveXRObjectCount() < MAX_ACTIVE_CHILIES) {
+      spawnXRObject(true);
+    }
+  }, SPAWN_REFILL_INTERVAL);
+}
+
+function spawnXRObject(nearView = true) {
+  if (!xrLastPose || getActiveXRObjectCount() >= MAX_ACTIVE_CHILIES) return;
+
+  const asset = getSpawnAssetXR();
+  const cameraMatrix = xrLastPose.transform.matrix;
+  const cameraPosition = [cameraMatrix[12], cameraMatrix[13], cameraMatrix[14]];
+  const right = [cameraMatrix[0], cameraMatrix[1], cameraMatrix[2]];
+  const up = [cameraMatrix[4], cameraMatrix[5], cameraMatrix[6]];
+  const forward = [-cameraMatrix[8], -cameraMatrix[9], -cameraMatrix[10]];
+  const distance = nearView ? randF(1.25, 2.2) : randF(1.8, 3.2);
+  const spreadX = nearView ? randF(-0.8, 0.8) : randF(-1.4, 1.4);
+  const spreadY = nearView ? randF(-0.35, 0.35) : randF(-0.65, 0.65);
+  const sizePx = randomNumber(asset.minSize || CHILI_SIZE_MIN, asset.maxSize || CHILI_SIZE_MAX);
+  const depth = randF(DEPTH_MIN, DEPTH_MAX);
+  const size = (sizePx / 100) * depth;
+
+  xrObjects.push({
+    asset,
+    isTarget: !!asset.isTarget,
+    position: addVec3(
+      addVec3(addVec3(cameraPosition, scaleVec3(forward, distance)), scaleVec3(right, spreadX)),
+      scaleVec3(up, spreadY)
+    ),
+    size,
+    depth,
+    createdAt: performance.now(),
+    lifetime: randomNumber(CHILI_LIFETIME_MIN, CHILI_LIFETIME_MAX) + randomNumber(0, 1800),
+    caught: false,
+    expiring: false
+  });
+}
+
+function getSpawnAssetXR() {
+  const activeCount = getActiveXRObjectCount();
+  const targetCount = xrObjects.filter((object) => object.isTarget && !object.caught && !object.expiring).length;
+  const desiredTargetCount = Math.max(MIN_TARGET_CHILIES, Math.round((activeCount + 1) * TARGET_SPAWN_RATIO));
+
+  if (targetCount < desiredTargetCount || DECOY_ASSETS.length === 0) {
+    return TARGET_ASSET;
+  }
+
+  return DECOY_ASSETS[randomNumber(0, DECOY_ASSETS.length - 1)];
+}
+
+function expireXRObjects(time) {
+  xrObjects.forEach((object) => {
+    if (object.caught || object.expiring) return;
+
+    if (time - object.createdAt >= object.lifetime || !isXRObjectInView(object)) {
+      object.expiring = true;
+      object.expireStartedAt = time;
+    }
+  });
+
+  xrObjects = xrObjects.filter((object) => !object.expiring || time - object.expireStartedAt < 420);
+}
+
+function refillXRCurrentView(time) {
+  if (time - xrLastRefillAt < VIEW_REFILL_COOLDOWN) return;
+  if (getVisibleXRObjectCount() >= MIN_VISIBLE_CHILIES) return;
+  if (getActiveXRObjectCount() >= MAX_ACTIVE_CHILIES) return;
+
+  xrLastRefillAt = time;
+  spawnXRObject(true);
+}
+
+function getActiveXRObjectCount() {
+  return xrObjects.filter((object) => !object.caught && !object.expiring).length;
+}
+
+function getVisibleXRObjectCount() {
+  return xrObjects.filter((object) => !object.caught && !object.expiring && isXRObjectInView(object)).length;
+}
+
+function isXRObjectInView(object) {
+  if (!xrLastViewProjection) return true;
+
+  const ndc = projectXRPoint(object.position, xrLastViewProjection);
+  return ndc && Math.abs(ndc.x) <= 1.25 && Math.abs(ndc.y) <= 1.25 && ndc.z >= -1 && ndc.z <= 1;
+}
+
+function catchXRObjectByMarker() {
+  if (!xrActive || !xrLastViewProjection) return false;
+
+  let closest = null;
+  let closestDist = Infinity;
+  let closestTarget = null;
+  let closestTargetDist = Infinity;
+  const radius = 0.22;
+
+  xrObjects.forEach((object) => {
+    if (object.caught || object.expiring) return;
+
+    const ndc = projectXRPoint(object.position, xrLastViewProjection);
+    if (!ndc || ndc.z < -1 || ndc.z > 1) return;
+
+    const distance = Math.sqrt(ndc.x * ndc.x + ndc.y * ndc.y);
+    if (distance > radius) return;
+
+    if (object.isTarget && distance < closestTargetDist) {
+      closestTarget = object;
+      closestTargetDist = distance;
+    }
+
+    if (distance < closestDist) {
+      closest = object;
+      closestDist = distance;
+    }
+  });
+
+  const object = closestTarget || closest;
+
+  if (!object) {
+    showMissEffect();
+    return true;
+  }
+
+  collectXRObject(object);
+  return true;
+}
+
+function collectXRObject(object) {
+  if (!gameRunning || object.caught) return;
+
+  object.caught = true;
+
+  if (object.isTarget) {
+    score++;
+    updateScoreText();
+    createHitEffect(window.innerWidth / 2, window.innerHeight / 2);
+    createPlusOne(window.innerWidth / 2, window.innerHeight / 2);
+
+    if (score >= TARGET_SCORE) {
+      setTimeout(() => {
+        endGame();
+      }, 320);
+    }
+  } else {
+    showMissEffect();
+  }
+
+  setTimeout(() => {
+    xrObjects = xrObjects.filter((item) => item !== object);
+  }, 280);
+}
+
+function stopXRSession(endSession = true) {
+  xrActive = false;
+  clearInterval(xrSpawnInterval);
+  xrSpawnInterval = null;
+  xrObjects = [];
+  xrLastPose = null;
+  xrLastView = null;
+  xrLastViewProjection = null;
+  xrLastRefillAt = 0;
+  document.body.classList.remove("xr-mode");
+
+  if (xrSession && endSession) {
+    xrSession.end().catch(() => {});
+  }
+
+  xrSession = null;
+  xrRefSpace = null;
+}
+
+/* =========================
    VOICE CATCH
 ========================= */
 
@@ -592,10 +1001,15 @@ function stopVoiceCatch() {
 ========================= */
 
 async function startGame() {
-  const cameraReady = await startCamera();
-  if (!cameraReady) return;
+  const xrReady = await startXRSession();
 
-  await startOrientationTracking();
+  if (!xrReady) {
+    const cameraReady = await startCamera();
+    if (!cameraReady) return;
+
+    await startOrientationTracking();
+  }
+
   resetGameData();
 
   document.body.classList.remove("intro-mode");
@@ -610,7 +1024,12 @@ async function startGame() {
 
   startVoiceCatch();
   runTimer();
-  runSpawner();
+
+  if (xrReady) {
+    runXRSpawner();
+  } else {
+    runSpawner();
+  }
 }
 
 function resetGameData() {
@@ -705,6 +1124,7 @@ function endGame() {
   renderLocalResult();
 
   stopOrientationTracking();
+  stopXRSession();
   stopCamera();
 
   document.body.classList.remove("game-mode");
@@ -725,6 +1145,7 @@ function resetToIntro() {
   resetAimMarker();
 
   stopOrientationTracking();
+  stopXRSession();
   stopCamera();
 
   score = 0;
@@ -1016,6 +1437,10 @@ function isRectInViewport(rect, margin = 0) {
 
 function catchChiliByMarker() {
   if (!gameRunning) return;
+
+  if (xrActive && catchXRObjectByMarker()) {
+    return;
+  }
 
   const targetHit = findChiliInMarker();
 
@@ -1484,6 +1909,70 @@ function getDistance(x1, y1, x2, y2) {
   const dy = y2 - y1;
 
   return Math.sqrt(dx * dx + dy * dy);
+}
+
+function addVec3(a, b) {
+  return [
+    a[0] + b[0],
+    a[1] + b[1],
+    a[2] + b[2]
+  ];
+}
+
+function scaleVec3(vector, scale) {
+  return [
+    vector[0] * scale,
+    vector[1] * scale,
+    vector[2] * scale
+  ];
+}
+
+function multiplyMat4(a, b) {
+  const out = new Float32Array(16);
+
+  for (let column = 0; column < 4; column++) {
+    for (let row = 0; row < 4; row++) {
+      out[column * 4 + row] =
+        a[0 * 4 + row] * b[column * 4 + 0] +
+        a[1 * 4 + row] * b[column * 4 + 1] +
+        a[2 * 4 + row] * b[column * 4 + 2] +
+        a[3 * 4 + row] * b[column * 4 + 3];
+    }
+  }
+
+  return out;
+}
+
+function makeBillboardMatrix(object, cameraMatrix) {
+  const size = object.size;
+  const right = [cameraMatrix[0], cameraMatrix[1], cameraMatrix[2]];
+  const up = [cameraMatrix[4], cameraMatrix[5], cameraMatrix[6]];
+  const forward = [cameraMatrix[8], cameraMatrix[9], cameraMatrix[10]];
+
+  return new Float32Array([
+    right[0] * size, right[1] * size, right[2] * size, 0,
+    up[0] * size, up[1] * size, up[2] * size, 0,
+    forward[0] * size, forward[1] * size, forward[2] * size, 0,
+    object.position[0], object.position[1], object.position[2], 1
+  ]);
+}
+
+function projectXRPoint(point, viewProjection) {
+  const x = point[0];
+  const y = point[1];
+  const z = point[2];
+  const clipX = viewProjection[0] * x + viewProjection[4] * y + viewProjection[8] * z + viewProjection[12];
+  const clipY = viewProjection[1] * x + viewProjection[5] * y + viewProjection[9] * z + viewProjection[13];
+  const clipZ = viewProjection[2] * x + viewProjection[6] * y + viewProjection[10] * z + viewProjection[14];
+  const clipW = viewProjection[3] * x + viewProjection[7] * y + viewProjection[11] * z + viewProjection[15];
+
+  if (clipW <= 0.0001) return null;
+
+  return {
+    x: clipX / clipW,
+    y: clipY / clipW,
+    z: clipZ / clipW
+  };
 }
 
 function updateScoreText() {

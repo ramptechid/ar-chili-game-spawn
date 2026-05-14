@@ -73,6 +73,20 @@ body.xr-mode .camera-overlay {
   display: none !important;
 }
 
+#xrCanvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  z-index: 1;
+  display: none;
+  background: transparent;
+}
+
+body.xr-mode #xrCanvas {
+  display: block;
+}
+
 /* GAME AREA */
 #gameArea {
   position: fixed;
