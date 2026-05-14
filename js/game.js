@@ -108,6 +108,43 @@ const WORLD_RANGE_V = 16;
 const MIN_CHILI_SCREEN_DISTANCE = 180;
 const DEPTH_MIN = 0.55;
 const DEPTH_MAX = 1.35;
+const TARGET_SPAWN_CHANCE = 0.58;
+const MIN_TARGET_CHILIES = 2;
+
+const TARGET_ASSET = {
+  src: "assets/images/chili-green.png",
+  alt: "Green Chili",
+  isTarget: true,
+  minSize: 54,
+  maxSize: 112
+};
+
+const DECOY_ASSETS = [
+  {
+    src: "assets/images/bintang.png",
+    alt: "Star Decoy",
+    minSize: 42,
+    maxSize: 82
+  },
+  {
+    src: "assets/images/kotak-tinggi.png",
+    alt: "Tall Box Decoy",
+    minSize: 50,
+    maxSize: 96
+  },
+  {
+    src: "assets/images/persegi-panjang.png",
+    alt: "Rectangle Decoy",
+    minSize: 58,
+    maxSize: 112
+  },
+  {
+    src: "assets/images/segi-enam.png",
+    alt: "Hexagon Decoy",
+    minSize: 46,
+    maxSize: 90
+  }
+];
 
 // Pixels per 1° of phone rotation
 const PX_PER_DEG_H = window.innerWidth  / 28;
@@ -550,20 +587,22 @@ function spawnChili(nearView = false) {
     return;
   }
 
-  const size  = randomNumber(CHILI_SIZE_MIN, CHILI_SIZE_MAX);
+  const spawnAsset = getSpawnAsset();
+  const size  = randomNumber(spawnAsset.minSize || CHILI_SIZE_MIN, spawnAsset.maxSize || CHILI_SIZE_MAX);
   const hs    = size / 2;
   const depth = randF(DEPTH_MIN, DEPTH_MAX);
 
   const chili = document.createElement("img");
-  chili.src       = "assets/images/chili-green.png";
+  chili.src       = spawnAsset.src;
   chili.className = "chili";
-  chili.alt       = "Green Chili";
+  chili.alt       = spawnAsset.alt;
   chili.style.width  = `${size}px`;
   chili.style.rotate = `${randomNumber(-35, 35)}deg`;
   chili.style.zIndex = Math.round(depth * 10);
   chili.dataset.caught = "false";
   chili.dataset.hs     = hs;
   chili.dataset.depth  = depth.toFixed(3);
+  chili.dataset.target = spawnAsset.isTarget ? "true" : "false";
 
   if (baseGamma !== null) {
     const rangeH = nearView ? 10 : WORLD_RANGE_H;
@@ -634,6 +673,22 @@ function expireChili(chili) {
 
 function getActiveChiliCount() {
   return document.querySelectorAll(".chili:not(.chili-expire)").length;
+}
+
+function getActiveTargetCount() {
+  return document.querySelectorAll('.chili[data-target="true"]:not(.chili-expire)').length;
+}
+
+function getSpawnAsset() {
+  if (getActiveTargetCount() < MIN_TARGET_CHILIES) {
+    return TARGET_ASSET;
+  }
+
+  if (Math.random() < TARGET_SPAWN_CHANCE || DECOY_ASSETS.length === 0) {
+    return TARGET_ASSET;
+  }
+
+  return DECOY_ASSETS[randomNumber(0, DECOY_ASSETS.length - 1)];
 }
 
 function getSpacedWorldSpawn(centerGamma, centerBeta, rangeH, rangeV) {
@@ -757,6 +812,10 @@ function findChiliInMarker() {
   let closestDist = Infinity;
   let closestX = 0;
   let closestY = 0;
+  let closestTarget = null;
+  let closestTargetDist = Infinity;
+  let closestTargetX = 0;
+  let closestTargetY = 0;
 
   chilies.forEach((chili) => {
     if (chili.dataset.caught === "true") return;
@@ -767,6 +826,13 @@ function findChiliInMarker() {
 
     const distance = getDistance(targetCenterX, targetCenterY, chiliCenterX, chiliCenterY);
 
+    if (distance <= catchRadius && chili.dataset.target === "true" && distance < closestTargetDist) {
+      closestTargetDist = distance;
+      closestTarget = chili;
+      closestTargetX = chiliRect.left;
+      closestTargetY = chiliRect.top;
+    }
+
     if (distance <= catchRadius && distance < closestDist) {
       closestDist = distance;
       closestChili = chili;
@@ -774,6 +840,14 @@ function findChiliInMarker() {
       closestY = chiliRect.top;
     }
   });
+
+  if (closestTarget) {
+    return {
+      chili: closestTarget,
+      x: closestTargetX,
+      y: closestTargetY
+    };
+  }
 
   if (closestChili) {
     return {
@@ -794,12 +868,17 @@ function collectChili(chili, x, y) {
   resetMissEffect();
 
   chili.dataset.caught = "true";
+  const isTarget = chili.dataset.target === "true";
 
-  score++;
-  scoreText.textContent = score;
+  if (isTarget) {
+    score++;
+    scoreText.textContent = score;
 
-  createHitEffect(x, y);
-  createPlusOne(x, y);
+    createHitEffect(x, y);
+    createPlusOne(x, y);
+  } else {
+    showMissEffect();
+  }
 
   scheduleNextChili(randomNumber(350, 850), false);
 
