@@ -121,7 +121,6 @@ const XR_DISTANCE_MIN = 1;
 const XR_DISTANCE_MAX = 1.5;
 const XR_HEIGHT_MIN = -0.45;
 const XR_HEIGHT_MAX = 0.65;
-const XR_OBJECT_VERTEX_COUNT = 6;
 const XR_CATCH_ANIM_MS = 480;
 const XR_FADEIN_MS = 320;
 const XR_EXPIRE_MS = 520;
@@ -141,6 +140,7 @@ const SHOUT_RMS_THRESHOLD = 0.18;
 
 const TARGET_ASSET = {
   src: "assets/images/chili-green.png",
+  modelSrc: "assets/models/chili_green_low_poly.glb",
   alt: "Green Chili",
   isTarget: true,
   minSize: 38,
@@ -150,24 +150,28 @@ const TARGET_ASSET = {
 const DECOY_ASSETS = [
   {
     src: "assets/images/bintang.png",
+    modelSrc: "assets/models/bintang_low_poly.glb",
     alt: "Star Decoy",
     minSize: 34,
     maxSize: 68
   },
   {
     src: "assets/images/kotak-tinggi.png",
+    modelSrc: "assets/models/kotak_tinggi_low_poly.glb",
     alt: "Tall Box Decoy",
     minSize: 38,
     maxSize: 78
   },
   {
     src: "assets/images/persegi-panjang.png",
+    modelSrc: "assets/models/persegi_panjang_low_poly.glb",
     alt: "Rectangle Decoy",
     minSize: 44,
     maxSize: 86
   },
   {
     src: "assets/images/segi-enam.png",
+    modelSrc: "assets/models/segi_enam_low_poly.glb",
     alt: "Hexagon Decoy",
     minSize: 36,
     maxSize: 72
@@ -205,9 +209,7 @@ let xrSession = null;
 let xrRefSpace = null;
 let xrGl = null;
 let xrProgram = null;
-let xrPositionBuffer = null;
-let xrUvBuffer = null;
-let xrTextures = new Map();
+let xrModels = new Map();
 let xrObjects = [];
 let xrLastPose = null;
 let xrLastView = null;
@@ -494,7 +496,7 @@ async function startXRSession() {
 
     xrCanvas.addEventListener("webglcontextlost", (e) => {
       e.preventDefault();
-      xrTextures.clear();
+      xrModels.clear();
     }, { once: true });
 
     xrSession = await navigator.xr.requestSession("immersive-ar", {
@@ -520,7 +522,7 @@ async function startXRSession() {
     }
 
     setupXRRenderer();
-    await loadXRTextures();
+    await loadXRModels();
 
     xrObjects = [];
     xrActive = true;
@@ -543,25 +545,26 @@ async function startXRSession() {
 function setupXRRenderer() {
   const vertexShader = createXRShader(xrGl.VERTEX_SHADER, `
     attribute vec3 a_position;
-    attribute vec2 a_uv;
+    attribute vec3 a_normal;
     uniform mat4 u_matrix;
-    varying vec2 v_uv;
+    uniform mat4 u_model;
+    varying float v_light;
 
     void main() {
-      v_uv = a_uv;
+      vec3 normal = normalize(mat3(u_model) * a_normal);
+      vec3 lightDir = normalize(vec3(0.35, 0.8, 0.45));
+      v_light = 0.45 + max(dot(normal, lightDir), 0.0) * 0.55;
       gl_Position = u_matrix * vec4(a_position, 1.0);
     }
   `);
   const fragmentShader = createXRShader(xrGl.FRAGMENT_SHADER, `
     precision mediump float;
-    uniform sampler2D u_texture;
+    uniform vec4 u_color;
     uniform float u_alpha;
-    varying vec2 v_uv;
+    varying float v_light;
 
     void main() {
-      vec4 color = texture2D(u_texture, v_uv);
-      if (color.a < 0.08) discard;
-      gl_FragColor = vec4(color.rgb, color.a * u_alpha);
+      gl_FragColor = vec4(u_color.rgb * v_light, u_color.a * u_alpha);
     }
   `);
 
@@ -570,49 +573,10 @@ function setupXRRenderer() {
   xrGl.attachShader(xrProgram, fragmentShader);
   xrGl.linkProgram(xrProgram);
 
-  const objectGeometry = createXRObjectGeometry();
-
-  xrPositionBuffer = xrGl.createBuffer();
-  xrGl.bindBuffer(xrGl.ARRAY_BUFFER, xrPositionBuffer);
-  xrGl.bufferData(
-    xrGl.ARRAY_BUFFER,
-    new Float32Array(objectGeometry.positions),
-    xrGl.STATIC_DRAW
-  );
-
-  xrUvBuffer = xrGl.createBuffer();
-  xrGl.bindBuffer(xrGl.ARRAY_BUFFER, xrUvBuffer);
-  xrGl.bufferData(
-    xrGl.ARRAY_BUFFER,
-    new Float32Array(objectGeometry.uvs),
-    xrGl.STATIC_DRAW
-  );
-
   xrGl.enable(xrGl.DEPTH_TEST);
   xrGl.depthFunc(xrGl.LEQUAL);
   xrGl.enable(xrGl.BLEND);
   xrGl.blendFunc(xrGl.SRC_ALPHA, xrGl.ONE_MINUS_SRC_ALPHA);
-}
-
-function createXRObjectGeometry() {
-  return {
-    positions: [
-      -0.5, -0.5, 0,
-       0.5, -0.5, 0,
-      -0.5,  0.5, 0,
-      -0.5,  0.5, 0,
-       0.5, -0.5, 0,
-       0.5,  0.5, 0
-    ],
-    uvs: [
-      0, 1,
-      1, 1,
-      0, 0,
-      0, 0,
-      1, 1,
-      1, 0
-    ]
-  };
 }
 
 function createXRShader(type, source) {
@@ -622,30 +586,128 @@ function createXRShader(type, source) {
   return shader;
 }
 
-async function loadXRTextures() {
+async function loadXRModels() {
   const assets = [TARGET_ASSET, ...DECOY_ASSETS];
-  await Promise.all(assets.map((asset) => loadXRTexture(asset.src)));
+  await Promise.all(assets.map((asset) => loadXRModel(asset.modelSrc)));
 }
 
-function loadXRTexture(src) {
-  if (xrTextures.has(src)) return Promise.resolve(xrTextures.get(src));
+async function loadXRModel(src) {
+  if (xrModels.has(src)) return xrModels.get(src);
 
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => {
-      const texture = xrGl.createTexture();
-      xrGl.bindTexture(xrGl.TEXTURE_2D, texture);
-      xrGl.texImage2D(xrGl.TEXTURE_2D, 0, xrGl.RGBA, xrGl.RGBA, xrGl.UNSIGNED_BYTE, image);
-      xrGl.texParameteri(xrGl.TEXTURE_2D, xrGl.TEXTURE_WRAP_S, xrGl.CLAMP_TO_EDGE);
-      xrGl.texParameteri(xrGl.TEXTURE_2D, xrGl.TEXTURE_WRAP_T, xrGl.CLAMP_TO_EDGE);
-      xrGl.texParameteri(xrGl.TEXTURE_2D, xrGl.TEXTURE_MIN_FILTER, xrGl.LINEAR);
-      xrGl.texParameteri(xrGl.TEXTURE_2D, xrGl.TEXTURE_MAG_FILTER, xrGl.LINEAR);
-      xrTextures.set(src, texture);
-      resolve(texture);
-    };
-    image.onerror = reject;
-    image.src = src;
+  const response = await fetch(src);
+  if (!response.ok) {
+    throw new Error(`Unable to load 3D model: ${src}`);
+  }
+
+  const model = createXRModelFromGlb(await response.arrayBuffer());
+  xrModels.set(src, model);
+  return model;
+}
+
+function createXRModelFromGlb(arrayBuffer) {
+  const dataView = new DataView(arrayBuffer);
+  const magic = dataView.getUint32(0, true);
+  if (magic !== 0x46546c67) {
+    throw new Error("Invalid GLB file.");
+  }
+
+  let offset = 12;
+  let json = null;
+  let bin = null;
+
+  while (offset < arrayBuffer.byteLength) {
+    const chunkLength = dataView.getUint32(offset, true);
+    const chunkType = dataView.getUint32(offset + 4, true);
+    const chunkStart = offset + 8;
+    const chunk = arrayBuffer.slice(chunkStart, chunkStart + chunkLength);
+
+    if (chunkType === 0x4e4f534a) {
+      json = JSON.parse(new TextDecoder().decode(chunk).trim());
+    } else if (chunkType === 0x004e4942) {
+      bin = chunk;
+    }
+
+    offset = chunkStart + chunkLength;
+  }
+
+  if (!json || !bin) {
+    throw new Error("GLB is missing JSON or binary data.");
+  }
+
+  const materials = (json.materials || []).map((material) => {
+    const factor = material.pbrMetallicRoughness?.baseColorFactor || [1, 1, 1, 1];
+    return new Float32Array(factor);
   });
+
+  const primitives = [];
+
+  (json.meshes || []).forEach((mesh) => {
+    (mesh.primitives || []).forEach((primitive) => {
+      const positions = readGlbAccessor(json, bin, primitive.attributes.POSITION);
+      const normals = primitive.attributes.NORMAL !== undefined
+        ? readGlbAccessor(json, bin, primitive.attributes.NORMAL)
+        : new Float32Array(positions.length);
+      const indices = primitive.indices !== undefined
+        ? readGlbAccessor(json, bin, primitive.indices)
+        : null;
+
+      const positionBuffer = xrGl.createBuffer();
+      xrGl.bindBuffer(xrGl.ARRAY_BUFFER, positionBuffer);
+      xrGl.bufferData(xrGl.ARRAY_BUFFER, positions, xrGl.STATIC_DRAW);
+
+      const normalBuffer = xrGl.createBuffer();
+      xrGl.bindBuffer(xrGl.ARRAY_BUFFER, normalBuffer);
+      xrGl.bufferData(xrGl.ARRAY_BUFFER, normals, xrGl.STATIC_DRAW);
+
+      let indexBuffer = null;
+      if (indices) {
+        indexBuffer = xrGl.createBuffer();
+        xrGl.bindBuffer(xrGl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+        xrGl.bufferData(xrGl.ELEMENT_ARRAY_BUFFER, indices, xrGl.STATIC_DRAW);
+      }
+
+      primitives.push({
+        positionBuffer,
+        normalBuffer,
+        indexBuffer,
+        indexType: indices instanceof Uint32Array ? xrGl.UNSIGNED_INT : xrGl.UNSIGNED_SHORT,
+        count: indices ? indices.length : positions.length / 3,
+        color: materials[primitive.material] || new Float32Array([0.85, 1, 0.45, 1])
+      });
+    });
+  });
+
+  return { primitives };
+}
+
+function readGlbAccessor(json, bin, accessorIndex) {
+  const accessor = json.accessors[accessorIndex];
+  const bufferView = json.bufferViews[accessor.bufferView];
+  const componentCount = getGlbAccessorComponentCount(accessor.type);
+  const TypedArray = getGlbAccessorArrayType(accessor.componentType);
+  const byteOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0);
+  const length = accessor.count * componentCount;
+
+  return new TypedArray(bin, byteOffset, length);
+}
+
+function getGlbAccessorComponentCount(type) {
+  switch (type) {
+    case "SCALAR": return 1;
+    case "VEC2": return 2;
+    case "VEC3": return 3;
+    case "VEC4": return 4;
+    default: throw new Error(`Unsupported GLB accessor type: ${type}`);
+  }
+}
+
+function getGlbAccessorArrayType(componentType) {
+  switch (componentType) {
+    case 5123: return Uint16Array;
+    case 5125: return Uint32Array;
+    case 5126: return Float32Array;
+    default: throw new Error(`Unsupported GLB component type: ${componentType}`);
+  }
 }
 
 function onXRFrame(time, frame) {
@@ -680,18 +742,12 @@ function renderXRObjects(view) {
   xrGl.useProgram(xrProgram);
 
   const positionLocation = xrGl.getAttribLocation(xrProgram, "a_position");
-  xrGl.bindBuffer(xrGl.ARRAY_BUFFER, xrPositionBuffer);
-  xrGl.enableVertexAttribArray(positionLocation);
-  xrGl.vertexAttribPointer(positionLocation, 3, xrGl.FLOAT, false, 0, 0);
-
-  const uvLocation = xrGl.getAttribLocation(xrProgram, "a_uv");
-  xrGl.bindBuffer(xrGl.ARRAY_BUFFER, xrUvBuffer);
-  xrGl.enableVertexAttribArray(uvLocation);
-  xrGl.vertexAttribPointer(uvLocation, 2, xrGl.FLOAT, false, 0, 0);
+  const normalLocation = xrGl.getAttribLocation(xrProgram, "a_normal");
 
   const matrixLocation = xrGl.getUniformLocation(xrProgram, "u_matrix");
+  const modelLocation = xrGl.getUniformLocation(xrProgram, "u_model");
   const alphaLocation = xrGl.getUniformLocation(xrProgram, "u_alpha");
-  const textureLocation = xrGl.getUniformLocation(xrProgram, "u_texture");
+  const colorLocation = xrGl.getUniformLocation(xrProgram, "u_color");
   const viewProjection = multiplyMat4(view.projectionMatrix, view.transform.inverse.matrix);
   const now = performance.now();
 
@@ -720,13 +776,31 @@ function renderXRObjects(view) {
 
     const modelMatrix = makeXRObjectMatrix(object, scale);
     const matrix = multiplyMat4(viewProjection, modelMatrix);
+    const model = xrModels.get(object.asset.modelSrc);
+    if (!model) return;
 
-    xrGl.activeTexture(xrGl.TEXTURE0);
-    xrGl.bindTexture(xrGl.TEXTURE_2D, xrTextures.get(object.asset.src));
-    xrGl.uniform1i(textureLocation, 0);
     xrGl.uniform1f(alphaLocation, alpha);
     xrGl.uniformMatrix4fv(matrixLocation, false, matrix);
-    xrGl.drawArrays(xrGl.TRIANGLES, 0, XR_OBJECT_VERTEX_COUNT);
+    xrGl.uniformMatrix4fv(modelLocation, false, modelMatrix);
+
+    model.primitives.forEach((primitive) => {
+      xrGl.bindBuffer(xrGl.ARRAY_BUFFER, primitive.positionBuffer);
+      xrGl.enableVertexAttribArray(positionLocation);
+      xrGl.vertexAttribPointer(positionLocation, 3, xrGl.FLOAT, false, 0, 0);
+
+      xrGl.bindBuffer(xrGl.ARRAY_BUFFER, primitive.normalBuffer);
+      xrGl.enableVertexAttribArray(normalLocation);
+      xrGl.vertexAttribPointer(normalLocation, 3, xrGl.FLOAT, false, 0, 0);
+
+      xrGl.uniform4fv(colorLocation, primitive.color);
+
+      if (primitive.indexBuffer) {
+        xrGl.bindBuffer(xrGl.ELEMENT_ARRAY_BUFFER, primitive.indexBuffer);
+        xrGl.drawElements(xrGl.TRIANGLES, primitive.count, primitive.indexType, 0);
+      } else {
+        xrGl.drawArrays(xrGl.TRIANGLES, 0, primitive.count);
+      }
+    });
   });
 }
 
@@ -961,10 +1035,14 @@ function stopXRSession(endSession = true) {
 
   if (xrGl) {
     if (xrProgram) { xrGl.deleteProgram(xrProgram); xrProgram = null; }
-    if (xrPositionBuffer) { xrGl.deleteBuffer(xrPositionBuffer); xrPositionBuffer = null; }
-    if (xrUvBuffer) { xrGl.deleteBuffer(xrUvBuffer); xrUvBuffer = null; }
-    xrTextures.forEach((tex) => xrGl.deleteTexture(tex));
-    xrTextures.clear();
+    xrModels.forEach((model) => {
+      model.primitives.forEach((primitive) => {
+        xrGl.deleteBuffer(primitive.positionBuffer);
+        xrGl.deleteBuffer(primitive.normalBuffer);
+        if (primitive.indexBuffer) xrGl.deleteBuffer(primitive.indexBuffer);
+      });
+    });
+    xrModels.clear();
     xrGl = null;
   }
 
@@ -2180,13 +2258,13 @@ function makeXRObjectMatrix(object, scale = 1) {
   const cos = Math.cos(yaw);
   const sin = Math.sin(yaw);
   const right = [cos, 0, -sin];
-  const up = [0, 1, 0];
   const forward = [sin, 0, cos];
+  const up = [0, 1, 0];
 
   return new Float32Array([
     right[0] * size, right[1] * size, right[2] * size, 0,
-    up[0] * size, up[1] * size, up[2] * size, 0,
     forward[0] * size, forward[1] * size, forward[2] * size, 0,
+    up[0] * size, up[1] * size, up[2] * size, 0,
     object.position[0], object.position[1], object.position[2], 1
   ]);
 }
