@@ -504,7 +504,7 @@ async function startXRSession() {
     try {
       xrRefSpace = await xrSession.requestReferenceSpace("local");
     } catch {
-      xrRefSpace = await xrSession.requestReferenceSpace("viewer");
+      xrRefSpace = await xrSession.requestReferenceSpace("local-floor");
     }
 
     setupXRRenderer();
@@ -717,7 +717,7 @@ function runXRSpawner() {
     if (!gameRunning || !xrActive) return;
 
     if (getActiveXRObjectCount() < MAX_ACTIVE_CHILIES) {
-      spawnXRObject(true);
+      spawnXRObject(false);
     }
   }, SPAWN_REFILL_INTERVAL);
 }
@@ -817,11 +817,10 @@ function expireXRObjects(time) {
 
 function refillXRCurrentView(time) {
   if (time - xrLastRefillAt < VIEW_REFILL_COOLDOWN) return;
-  if (getVisibleXRObjectCount() >= MIN_VISIBLE_CHILIES) return;
   if (getActiveXRObjectCount() >= MAX_ACTIVE_CHILIES) return;
 
   xrLastRefillAt = time;
-  spawnXRObject(true);
+  spawnXRObject(false);
 }
 
 function getActiveXRObjectCount() {
