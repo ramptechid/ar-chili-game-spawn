@@ -97,6 +97,8 @@ const TARGET_SCORE        = 10;
 const PLAY_AGAIN_COOLDOWN = 5;
 const CHILI_LIFETIME_MIN  = 3600;
 const CHILI_LIFETIME_MAX  = 12500;
+const CHILI_EXPIRE_STAGGER_MIN = 460;
+const CHILI_EXPIRE_STAGGER_MAX = 1100;
 const NEXT_CHILI_OVERLAP_MIN = 900;
 const NEXT_CHILI_OVERLAP_MAX = 2400;
 const MAX_ACTIVE_CHILIES = 32;
@@ -118,6 +120,8 @@ const XR_APPROACH_SCALE_BOOST = 0.9;
 const XR_CATCH_ANIM_MS = 480;
 const XR_FADEIN_MS = 320;
 const XR_EXPIRE_MS = 520;
+const XR_EXPIRE_STAGGER_MIN = 520;
+const XR_EXPIRE_STAGGER_MAX = 1250;
 const CHILI_SIZE_MIN = 34;
 const CHILI_SIZE_MAX = 82;
 const WORLD_RANGE_H = 24;
@@ -125,7 +129,7 @@ const WORLD_RANGE_V = 16;
 const MIN_CHILI_SCREEN_DISTANCE = 36;
 const DEPTH_MIN = 0.58;
 const DEPTH_MAX = 1.1;
-const TARGET_SPAWN_RATIO = 0.12;
+const TARGET_SPAWN_RATIO = 0.2;
 const MIN_TARGET_CHILIES = 1;
 const VOICE_CATCH_COOLDOWN_MS = 850;
 const SHOUT_RMS_THRESHOLD = 0.18;
@@ -187,6 +191,7 @@ let spawnInterval = null;
 let spawnTimeouts = [];
 let playAgainCooldownInterval = null;
 let lastViewRefillAt = 0;
+let nextChiliExpireAt = 0;
 
 let cameraStarted = false;
 let cameraStream = null;
@@ -204,6 +209,7 @@ let xrLastView = null;
 let xrLastViewProjection = null;
 let xrLastRefillAt = 0;
 let xrSpawnInterval = null;
+let nextXRExpireAt = 0;
 let voiceActive = false;
 let voiceStream = null;
 let voiceRecognition = null;
@@ -783,9 +789,8 @@ function spawnXRObject(nearView = true) {
 function getSpawnAssetXR() {
   const activeCount = getActiveXRObjectCount();
   const targetCount = xrObjects.filter((object) => object.isTarget && !object.caught && !object.catching && !object.expiring).length;
-  const desiredTargetCount = Math.max(MIN_TARGET_CHILIES, Math.round((activeCount + 1) * TARGET_SPAWN_RATIO));
 
-  if (targetCount < desiredTargetCount || DECOY_ASSETS.length === 0) {
+  if (DECOY_ASSETS.length === 0 || shouldSpawnTargetAsset(activeCount, targetCount)) {
     return TARGET_ASSET;
   }
 
@@ -795,14 +800,17 @@ function getSpawnAssetXR() {
 function expireXRObjects(time) {
   const now = performance.now();
 
-  xrObjects.forEach((object) => {
-    if (object.caught || object.catching || object.expiring) return;
+  if (now >= nextXRExpireAt) {
+    const nextExpiredObject = xrObjects
+      .filter((object) => !object.caught && !object.catching && !object.expiring && now - object.createdAt >= object.lifetime)
+      .sort((a, b) => (a.createdAt + a.lifetime) - (b.createdAt + b.lifetime))[0];
 
-    if (now - object.createdAt >= object.lifetime) {
-      object.expiring = true;
-      object.expireStartedAt = now;
+    if (nextExpiredObject) {
+      nextExpiredObject.expiring = true;
+      nextExpiredObject.expireStartedAt = now;
+      nextXRExpireAt = now + randomNumber(XR_EXPIRE_STAGGER_MIN, XR_EXPIRE_STAGGER_MAX);
     }
-  });
+  }
 
   xrObjects = xrObjects.filter((object) => {
     if (object.caught) return false;
@@ -906,6 +914,7 @@ function stopXRSession(endSession = true) {
   xrLastView = null;
   xrLastViewProjection = null;
   xrLastRefillAt = 0;
+  nextXRExpireAt = 0;
   document.body.classList.remove("xr-mode");
 
   if (xrGl) {
@@ -1183,6 +1192,7 @@ function clearSpawnTimers() {
   });
   spawnTimeouts = [];
   lastViewRefillAt = 0;
+  nextChiliExpireAt = 0;
 }
 
 function endGame() {
@@ -1365,9 +1375,26 @@ function spawnChili(nearView = false) {
 
   setTimeout(() => {
     if (chili.parentElement && chili.dataset.caught !== "true") {
-      expireChili(chili);
+      queueChiliExpire(chili);
     }
   }, duration);
+}
+
+function queueChiliExpire(chili) {
+  if (!gameRunning || !chili.parentElement) return;
+  if (chili.dataset.caught === "true" || chili.classList.contains("chili-expire")) return;
+
+  const now = performance.now();
+
+  if (now < nextChiliExpireAt) {
+    setTimeout(() => {
+      queueChiliExpire(chili);
+    }, nextChiliExpireAt - now + randomNumber(30, 160));
+    return;
+  }
+
+  nextChiliExpireAt = now + randomNumber(CHILI_EXPIRE_STAGGER_MIN, CHILI_EXPIRE_STAGGER_MAX);
+  expireChili(chili);
 }
 
 function expireChili(chili) {
@@ -1402,20 +1429,25 @@ function getActiveTargetCount() {
 function getSpawnAsset() {
   const activeCount = getActiveChiliCount();
   const targetCount = getActiveTargetCount();
-  const desiredTargetCount = Math.max(
-    MIN_TARGET_CHILIES,
-    Math.round((activeCount + 1) * TARGET_SPAWN_RATIO)
-  );
 
-  if (targetCount < desiredTargetCount) {
-    return TARGET_ASSET;
-  }
-
-  if (DECOY_ASSETS.length === 0) {
+  if (DECOY_ASSETS.length === 0 || shouldSpawnTargetAsset(activeCount, targetCount)) {
     return TARGET_ASSET;
   }
 
   return DECOY_ASSETS[randomNumber(0, DECOY_ASSETS.length - 1)];
+}
+
+function shouldSpawnTargetAsset(activeCount, targetCount) {
+  if (targetCount < MIN_TARGET_CHILIES) return true;
+
+  const maxTargetCount = Math.max(
+    MIN_TARGET_CHILIES + 1,
+    Math.ceil(activeCount * (TARGET_SPAWN_RATIO + 0.12))
+  );
+
+  if (targetCount >= maxTargetCount) return false;
+
+  return Math.random() < TARGET_SPAWN_RATIO;
 }
 
 function getSpacedWorldSpawn(centerGamma, centerBeta, rangeH, rangeV) {
