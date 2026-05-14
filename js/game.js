@@ -114,6 +114,8 @@ const DEPTH_MIN = 0.58;
 const DEPTH_MAX = 1.1;
 const TARGET_SPAWN_RATIO = 0.12;
 const MIN_TARGET_CHILIES = 1;
+const VOICE_CATCH_COOLDOWN_MS = 850;
+const SHOUT_RMS_THRESHOLD = 0.18;
 
 const TARGET_ASSET = {
   src: "assets/images/chili-green.png",
@@ -175,6 +177,13 @@ let lastViewRefillAt = 0;
 
 let cameraStarted = false;
 let cameraStream = null;
+let voiceActive = false;
+let voiceStream = null;
+let voiceRecognition = null;
+let voiceAudioContext = null;
+let voiceAnalyser = null;
+let voiceLoopId = null;
+let lastVoiceCatchAt = 0;
 
 // Device orientation for world-anchoring chilies (fallback mode)
 let orientationActive = false;
@@ -424,6 +433,161 @@ function stopCamera() {
 }
 
 /* =========================
+   VOICE CATCH
+========================= */
+
+async function startVoiceCatch() {
+  if (voiceActive) return;
+
+  voiceActive = true;
+  lastVoiceCatchAt = 0;
+
+  startSpeechCatch();
+
+  try {
+    voiceStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false
+      },
+      video: false
+    });
+
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+
+    if (!AudioContextClass) return;
+
+    voiceAudioContext = new AudioContextClass();
+    const source = voiceAudioContext.createMediaStreamSource(voiceStream);
+    voiceAnalyser = voiceAudioContext.createAnalyser();
+    voiceAnalyser.fftSize = 1024;
+    source.connect(voiceAnalyser);
+    startShoutLoop();
+  } catch (error) {
+    console.warn("Voice catch unavailable:", error);
+  }
+}
+
+function startSpeechCatch() {
+  const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (!SpeechRecognitionClass) return;
+
+  voiceRecognition = new SpeechRecognitionClass();
+  voiceRecognition.lang = "id-ID";
+  voiceRecognition.continuous = true;
+  voiceRecognition.interimResults = true;
+
+  voiceRecognition.onresult = (event) => {
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+
+      if (isIjoCommand(transcript)) {
+        triggerVoiceCatch();
+        break;
+      }
+    }
+  };
+
+  voiceRecognition.onerror = (event) => {
+    if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+      voiceRecognition = null;
+    }
+  };
+
+  voiceRecognition.onend = () => {
+    if (gameRunning && voiceActive && voiceRecognition) {
+      try {
+        voiceRecognition.start();
+      } catch (error) {
+        // Browser may still be closing the previous recognition session.
+      }
+    }
+  };
+
+  try {
+    voiceRecognition.start();
+  } catch (error) {
+    voiceRecognition = null;
+  }
+}
+
+function startShoutLoop() {
+  if (!voiceAnalyser) return;
+
+  const buffer = new Uint8Array(voiceAnalyser.fftSize);
+
+  function loop() {
+    if (!gameRunning || !voiceActive || !voiceAnalyser) {
+      voiceLoopId = null;
+      return;
+    }
+
+    voiceAnalyser.getByteTimeDomainData(buffer);
+
+    let sum = 0;
+    for (let i = 0; i < buffer.length; i++) {
+      const value = (buffer[i] - 128) / 128;
+      sum += value * value;
+    }
+
+    const rms = Math.sqrt(sum / buffer.length);
+
+    if (rms >= SHOUT_RMS_THRESHOLD) {
+      triggerVoiceCatch();
+    }
+
+    voiceLoopId = requestAnimationFrame(loop);
+  }
+
+  voiceLoopId = requestAnimationFrame(loop);
+}
+
+function triggerVoiceCatch() {
+  const now = Date.now();
+
+  if (!gameRunning || now - lastVoiceCatchAt < VOICE_CATCH_COOLDOWN_MS) return;
+
+  lastVoiceCatchAt = now;
+  catchChiliByMarker();
+}
+
+function stopVoiceCatch() {
+  voiceActive = false;
+
+  if (voiceRecognition) {
+    voiceRecognition.onend = null;
+    voiceRecognition.onerror = null;
+    voiceRecognition.onresult = null;
+    try {
+      voiceRecognition.stop();
+    } catch (error) {
+      // Some browsers throw if recognition is already stopped.
+    }
+  }
+  voiceRecognition = null;
+
+  if (voiceLoopId !== null) {
+    cancelAnimationFrame(voiceLoopId);
+    voiceLoopId = null;
+  }
+
+  if (voiceStream) {
+    voiceStream.getTracks().forEach((track) => {
+      track.stop();
+    });
+  }
+  voiceStream = null;
+
+  if (voiceAudioContext) {
+    voiceAudioContext.close().catch(() => {});
+  }
+  voiceAudioContext = null;
+  voiceAnalyser = null;
+}
+
+/* =========================
    GAME FLOW
 ========================= */
 
@@ -444,6 +608,7 @@ async function startGame() {
 
   gameRunning = true;
 
+  startVoiceCatch();
   runTimer();
   runSpawner();
 }
@@ -524,6 +689,7 @@ function endGame() {
 
   clearInterval(timerInterval);
   clearSpawnTimers();
+  stopVoiceCatch();
 
   gameArea.innerHTML = "";
   resetAimMarker();
@@ -553,6 +719,7 @@ function resetToIntro() {
 
   clearInterval(timerInterval);
   clearSpawnTimers();
+  stopVoiceCatch();
 
   gameArea.innerHTML = "";
   resetAimMarker();
@@ -1269,6 +1436,18 @@ function escapeHtml(text) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function isIjoCommand(text) {
+  const normalized = String(text)
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return normalized
+    .split(" ")
+    .some((word) => word === "ijo" || word === "hijau");
 }
 
 function roundRect(ctx, x, y, width, height, radius) {
