@@ -98,51 +98,51 @@ const CHILI_LIFETIME_MIN  = 4200;
 const CHILI_LIFETIME_MAX  = 11000;
 const NEXT_CHILI_OVERLAP_MIN = 900;
 const NEXT_CHILI_OVERLAP_MAX = 2400;
-const MAX_ACTIVE_CHILIES = 7;
-const INITIAL_CHILI_COUNT = 5;
+const MAX_ACTIVE_CHILIES = 10;
+const INITIAL_CHILI_COUNT = 8;
 const SPAWN_REFILL_INTERVAL = 700;
-const CHILI_SIZE_MIN = 48;
-const CHILI_SIZE_MAX = 110;
+const CHILI_SIZE_MIN = 34;
+const CHILI_SIZE_MAX = 82;
 const WORLD_RANGE_H = 24;
 const WORLD_RANGE_V = 16;
-const MIN_CHILI_SCREEN_DISTANCE = 180;
-const DEPTH_MIN = 0.55;
-const DEPTH_MAX = 1.35;
-const TARGET_SPAWN_CHANCE = 0.58;
-const MIN_TARGET_CHILIES = 2;
+const MIN_CHILI_SCREEN_DISTANCE = 220;
+const DEPTH_MIN = 0.58;
+const DEPTH_MAX = 1.1;
+const TARGET_SPAWN_RATIO = 0.2;
+const MIN_TARGET_CHILIES = 1;
 
 const TARGET_ASSET = {
   src: "assets/images/chili-green.png",
   alt: "Green Chili",
   isTarget: true,
-  minSize: 54,
-  maxSize: 112
+  minSize: 38,
+  maxSize: 74
 };
 
 const DECOY_ASSETS = [
   {
     src: "assets/images/bintang.png",
     alt: "Star Decoy",
-    minSize: 42,
-    maxSize: 82
+    minSize: 34,
+    maxSize: 68
   },
   {
     src: "assets/images/kotak-tinggi.png",
     alt: "Tall Box Decoy",
-    minSize: 50,
-    maxSize: 96
+    minSize: 38,
+    maxSize: 78
   },
   {
     src: "assets/images/persegi-panjang.png",
     alt: "Rectangle Decoy",
-    minSize: 58,
-    maxSize: 112
+    minSize: 44,
+    maxSize: 86
   },
   {
     src: "assets/images/segi-enam.png",
     alt: "Hexagon Decoy",
-    minSize: 46,
-    maxSize: 90
+    minSize: 36,
+    maxSize: 72
   }
 ];
 
@@ -680,11 +680,18 @@ function getActiveTargetCount() {
 }
 
 function getSpawnAsset() {
-  if (getActiveTargetCount() < MIN_TARGET_CHILIES) {
+  const activeCount = getActiveChiliCount();
+  const targetCount = getActiveTargetCount();
+  const desiredTargetCount = Math.max(
+    MIN_TARGET_CHILIES,
+    Math.round((activeCount + 1) * TARGET_SPAWN_RATIO)
+  );
+
+  if (targetCount < desiredTargetCount) {
     return TARGET_ASSET;
   }
 
-  if (Math.random() < TARGET_SPAWN_CHANCE || DECOY_ASSETS.length === 0) {
+  if (DECOY_ASSETS.length === 0) {
     return TARGET_ASSET;
   }
 
