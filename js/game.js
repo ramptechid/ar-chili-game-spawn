@@ -95,6 +95,7 @@ const leaderboardList = document.getElementById("leaderboardList");
 
 const TARGET_SCORE        = 10;
 const PLAY_AGAIN_COOLDOWN = 5;
+const WEBXR_ONLY_MODE = true;
 const CHILI_LIFETIME_MIN  = 3600;
 const CHILI_LIFETIME_MAX  = 12500;
 const CHILI_EXPIRE_STAGGER_MIN = 460;
@@ -254,6 +255,7 @@ closeAppNoticeBtn.addEventListener("click", closeAppNotice);
 ========================= */
 
 async function startOrientationTracking() {
+  if (WEBXR_ONLY_MODE) return false;
   if (orientationActive) return;
 
   // iOS 13+ requires explicit permission
@@ -990,6 +992,7 @@ function collectXRObject(object) {
 
 function stopXRSession(endSession = true) {
   xrActive = false;
+  stopCamera();
   clearInterval(xrSpawnInterval);
   clearTimeout(xrSpawnTimeout);
   xrInitialSpawnTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
@@ -1182,13 +1185,17 @@ function stopVoiceCatch() {
 ========================= */
 
 async function startGame() {
+  stopOrientationTracking();
+  stopCamera();
+
   const xrReady = await startXRSession();
 
   if (!xrReady) {
-    const cameraReady = await startCamera();
-    if (!cameraReady) return;
-
-    await startOrientationTracking();
+    showAppNotice(
+      "WebXR AR Required",
+      "This hunt now runs in real WebXR AR only. Open it on Android Chrome through HTTPS, then allow AR/camera access."
+    );
+    return;
   }
 
   resetGameData();
@@ -1206,11 +1213,7 @@ async function startGame() {
   startVoiceCatch();
   runTimer();
 
-  if (xrReady) {
-    runXRSpawner();
-  } else {
-    runSpawner();
-  }
+  runXRSpawner();
 }
 
 function resetGameData() {
