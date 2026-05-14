@@ -100,8 +100,11 @@ const CHILI_LIFETIME_MAX = 7000;
 const CHILI_TARGET_COUNT = 6;
 
 // Pixels per degree of phone rotation (sensitivity)
-const PX_PER_DEG_H = window.innerWidth / 28;
-const PX_PER_DEG_V = window.innerHeight / 38;
+const PX_PER_DEG_H = window.innerWidth / 32;
+const PX_PER_DEG_V = window.innerHeight / 42;
+
+// Smoothing factor: 0.0 = frozen, 1.0 = instant (no smooth)
+const ORIENT_SMOOTH = 0.07;
 
 /* =========================
    STATE
@@ -121,11 +124,13 @@ let cameraStream = null;
 
 // Device orientation for world-anchoring chilies
 let orientationActive = false;
-let baseGamma = null;
-let baseBeta = null;
-let currentGamma = 0;
-let currentBeta = 0;
-let rafPending = false;
+let baseGamma     = null;
+let baseBeta      = null;
+let rawGamma      = 0;   // latest raw reading from sensor
+let rawBeta       = 0;
+let smoothGamma   = 0;   // exponentially smoothed value used for rendering
+let smoothBeta    = 0;
+let orientLoopId  = null;
 
 document.body.classList.add("intro-mode");
 
@@ -173,41 +178,61 @@ function stopOrientationTracking() {
   if (!orientationActive) return;
   orientationActive = false;
   window.removeEventListener("deviceorientation", handleOrientation, true);
+  if (orientLoopId !== null) {
+    cancelAnimationFrame(orientLoopId);
+    orientLoopId = null;
+  }
   baseGamma = null;
-  baseBeta = null;
+  baseBeta  = null;
 }
 
 function handleOrientation(event) {
   if (!gameRunning) return;
 
   const gamma = event.gamma ?? 0;
-  const beta = event.beta ?? 0;
+  const beta  = event.beta  ?? 0;
 
   if (baseGamma === null) {
-    baseGamma = gamma;
-    baseBeta = beta;
-    currentGamma = gamma;
-    currentBeta = beta;
+    // First reading — set baseline and seed smoother at this value
+    baseGamma   = gamma;
+    baseBeta    = beta;
+    smoothGamma = gamma;
+    smoothBeta  = beta;
+    rawGamma    = gamma;
+    rawBeta     = beta;
+    startOrientationLoop();
     return;
   }
 
-  currentGamma = gamma;
-  currentBeta = beta;
+  rawGamma = gamma;
+  rawBeta  = beta;
+}
 
-  if (!rafPending) {
-    rafPending = true;
-    requestAnimationFrame(() => {
-      repositionChilies();
-      rafPending = false;
-    });
+function startOrientationLoop() {
+  if (orientLoopId !== null) return;
+
+  function loop() {
+    if (!gameRunning || !orientationActive) {
+      orientLoopId = null;
+      return;
+    }
+
+    // Exponential moving average — smooths out sensor noise
+    smoothGamma += ORIENT_SMOOTH * (rawGamma - smoothGamma);
+    smoothBeta  += ORIENT_SMOOTH * (rawBeta  - smoothBeta);
+
+    repositionChilies();
+    orientLoopId = requestAnimationFrame(loop);
   }
+
+  orientLoopId = requestAnimationFrame(loop);
 }
 
 function repositionChilies() {
   if (baseGamma === null) return;
 
-  const dGamma = currentGamma - baseGamma;
-  const dBeta = currentBeta - baseBeta;
+  const dGamma = smoothGamma - baseGamma;
+  const dBeta  = smoothBeta  - baseBeta;
 
   document.querySelectorAll(".chili").forEach((chili) => {
     if (chili.dataset.caught === "true") return;
