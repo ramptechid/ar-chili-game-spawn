@@ -121,7 +121,7 @@ const XR_DISTANCE_MIN = 1;
 const XR_DISTANCE_MAX = 1.5;
 const XR_HEIGHT_MIN = -0.45;
 const XR_HEIGHT_MAX = 0.65;
-const XR_OBJECT_VERTEX_COUNT = 24;
+const XR_OBJECT_VERTEX_COUNT = 6;
 const XR_CATCH_ANIM_MS = 480;
 const XR_FADEIN_MS = 320;
 const XR_EXPIRE_MS = 520;
@@ -207,7 +207,6 @@ let xrGl = null;
 let xrProgram = null;
 let xrPositionBuffer = null;
 let xrUvBuffer = null;
-let xrShadeBuffer = null;
 let xrTextures = new Map();
 let xrObjects = [];
 let xrLastPose = null;
@@ -545,14 +544,11 @@ function setupXRRenderer() {
   const vertexShader = createXRShader(xrGl.VERTEX_SHADER, `
     attribute vec3 a_position;
     attribute vec2 a_uv;
-    attribute float a_shade;
     uniform mat4 u_matrix;
     varying vec2 v_uv;
-    varying float v_shade;
 
     void main() {
       v_uv = a_uv;
-      v_shade = a_shade;
       gl_Position = u_matrix * vec4(a_position, 1.0);
     }
   `);
@@ -561,12 +557,11 @@ function setupXRRenderer() {
     uniform sampler2D u_texture;
     uniform float u_alpha;
     varying vec2 v_uv;
-    varying float v_shade;
 
     void main() {
       vec4 color = texture2D(u_texture, v_uv);
       if (color.a < 0.08) discard;
-      gl_FragColor = vec4(color.rgb * v_shade, color.a * u_alpha);
+      gl_FragColor = vec4(color.rgb, color.a * u_alpha);
     }
   `);
 
@@ -593,14 +588,6 @@ function setupXRRenderer() {
     xrGl.STATIC_DRAW
   );
 
-  xrShadeBuffer = xrGl.createBuffer();
-  xrGl.bindBuffer(xrGl.ARRAY_BUFFER, xrShadeBuffer);
-  xrGl.bufferData(
-    xrGl.ARRAY_BUFFER,
-    new Float32Array(objectGeometry.shades),
-    xrGl.STATIC_DRAW
-  );
-
   xrGl.enable(xrGl.DEPTH_TEST);
   xrGl.depthFunc(xrGl.LEQUAL);
   xrGl.enable(xrGl.BLEND);
@@ -608,47 +595,24 @@ function setupXRRenderer() {
 }
 
 function createXRObjectGeometry() {
-  const positions = [];
-  const uvs = [];
-  const shades = [];
-
-  const addPlane = (ax, az, bx, bz, shade) => {
-    positions.push(
-      -ax, -0.5, -az,
-       ax, -0.5,  az,
-      -ax,  0.5, -az,
-      -ax,  0.5, -az,
-       ax, -0.5,  az,
-       ax,  0.5,  az,
-
-      -bx, -0.5, -bz,
-       bx, -0.5,  bz,
-      -bx,  0.5, -bz,
-      -bx,  0.5, -bz,
-       bx, -0.5,  bz,
-       bx,  0.5,  bz
-    );
-
-    for (let i = 0; i < 2; i++) {
-      uvs.push(
-        0, 1,
-        1, 1,
-        0, 0,
-        0, 0,
-        1, 1,
-        1, 0
-      );
-    }
-
-    for (let i = 0; i < 12; i++) {
-      shades.push(shade);
-    }
+  return {
+    positions: [
+      -0.5, -0.5, 0,
+       0.5, -0.5, 0,
+      -0.5,  0.5, 0,
+      -0.5,  0.5, 0,
+       0.5, -0.5, 0,
+       0.5,  0.5, 0
+    ],
+    uvs: [
+      0, 1,
+      1, 1,
+      0, 0,
+      0, 0,
+      1, 1,
+      1, 0
+    ]
   };
-
-  addPlane(0.5, 0, 0, 0.5, 1);
-  addPlane(0.35, 0.35, 0.35, -0.35, 0.72);
-
-  return { positions, uvs, shades };
 }
 
 function createXRShader(type, source) {
@@ -724,11 +688,6 @@ function renderXRObjects(view) {
   xrGl.bindBuffer(xrGl.ARRAY_BUFFER, xrUvBuffer);
   xrGl.enableVertexAttribArray(uvLocation);
   xrGl.vertexAttribPointer(uvLocation, 2, xrGl.FLOAT, false, 0, 0);
-
-  const shadeLocation = xrGl.getAttribLocation(xrProgram, "a_shade");
-  xrGl.bindBuffer(xrGl.ARRAY_BUFFER, xrShadeBuffer);
-  xrGl.enableVertexAttribArray(shadeLocation);
-  xrGl.vertexAttribPointer(shadeLocation, 1, xrGl.FLOAT, false, 0, 0);
 
   const matrixLocation = xrGl.getUniformLocation(xrProgram, "u_matrix");
   const alphaLocation = xrGl.getUniformLocation(xrProgram, "u_alpha");
@@ -853,7 +812,7 @@ function spawnXRObject(nearView = false) {
     isTarget: !!asset.isTarget,
     position: anchoredPosition,
     size,
-    yaw: randF(0, Math.PI * 2),
+    yaw: Math.atan2(-dirX, -dirZ),
     createdAt: now,
     lifetime: randomNumber(XR_LIFETIME_MIN, XR_LIFETIME_MAX),
     caught: false,
@@ -1004,7 +963,6 @@ function stopXRSession(endSession = true) {
     if (xrProgram) { xrGl.deleteProgram(xrProgram); xrProgram = null; }
     if (xrPositionBuffer) { xrGl.deleteBuffer(xrPositionBuffer); xrPositionBuffer = null; }
     if (xrUvBuffer) { xrGl.deleteBuffer(xrUvBuffer); xrUvBuffer = null; }
-    if (xrShadeBuffer) { xrGl.deleteBuffer(xrShadeBuffer); xrShadeBuffer = null; }
     xrTextures.forEach((tex) => xrGl.deleteTexture(tex));
     xrTextures.clear();
     xrGl = null;
