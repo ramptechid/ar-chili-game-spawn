@@ -114,6 +114,7 @@ const XR_SIZE_MIN = 0.32;
 const XR_SIZE_MAX = 0.32;
 const XR_DISTANCE_MIN = 1.5;
 const XR_DISTANCE_MAX = 1.5;
+const XR_OBJECT_VERTEX_COUNT = 24;
 const XR_CATCH_ANIM_MS = 480;
 const XR_FADEIN_MS = 320;
 const XR_EXPIRE_MS = 520;
@@ -199,6 +200,7 @@ let xrGl = null;
 let xrProgram = null;
 let xrPositionBuffer = null;
 let xrUvBuffer = null;
+let xrShadeBuffer = null;
 let xrTextures = new Map();
 let xrObjects = [];
 let xrLastPose = null;
@@ -474,7 +476,8 @@ async function startXRSession() {
       xrGl = xrCanvas.getContext("webgl", {
         xrCompatible: true,
         alpha: true,
-        antialias: false
+        antialias: false,
+        depth: true
       });
     }
 
@@ -496,7 +499,8 @@ async function startXRSession() {
     xrSession.updateRenderState({
       baseLayer: new XRWebGLLayer(xrSession, xrGl, {
         alpha: true,
-        antialias: false
+        antialias: false,
+        depth: true
       })
     });
 
@@ -529,14 +533,17 @@ async function startXRSession() {
 
 function setupXRRenderer() {
   const vertexShader = createXRShader(xrGl.VERTEX_SHADER, `
-    attribute vec2 a_position;
+    attribute vec3 a_position;
     attribute vec2 a_uv;
+    attribute float a_shade;
     uniform mat4 u_matrix;
     varying vec2 v_uv;
+    varying float v_shade;
 
     void main() {
       v_uv = a_uv;
-      gl_Position = u_matrix * vec4(a_position, 0.0, 1.0);
+      v_shade = a_shade;
+      gl_Position = u_matrix * vec4(a_position, 1.0);
     }
   `);
   const fragmentShader = createXRShader(xrGl.FRAGMENT_SHADER, `
@@ -544,10 +551,12 @@ function setupXRRenderer() {
     uniform sampler2D u_texture;
     uniform float u_alpha;
     varying vec2 v_uv;
+    varying float v_shade;
 
     void main() {
       vec4 color = texture2D(u_texture, v_uv);
-      gl_FragColor = vec4(color.rgb, color.a * u_alpha);
+      if (color.a < 0.08) discard;
+      gl_FragColor = vec4(color.rgb * v_shade, color.a * u_alpha);
     }
   `);
 
@@ -556,16 +565,13 @@ function setupXRRenderer() {
   xrGl.attachShader(xrProgram, fragmentShader);
   xrGl.linkProgram(xrProgram);
 
+  const objectGeometry = createXRObjectGeometry();
+
   xrPositionBuffer = xrGl.createBuffer();
   xrGl.bindBuffer(xrGl.ARRAY_BUFFER, xrPositionBuffer);
   xrGl.bufferData(
     xrGl.ARRAY_BUFFER,
-    new Float32Array([
-      -0.5, -0.5,
-       0.5, -0.5,
-      -0.5,  0.5,
-       0.5,  0.5
-    ]),
+    new Float32Array(objectGeometry.positions),
     xrGl.STATIC_DRAW
   );
 
@@ -573,17 +579,66 @@ function setupXRRenderer() {
   xrGl.bindBuffer(xrGl.ARRAY_BUFFER, xrUvBuffer);
   xrGl.bufferData(
     xrGl.ARRAY_BUFFER,
-    new Float32Array([
-      0, 1,
-      1, 1,
-      0, 0,
-      1, 0
-    ]),
+    new Float32Array(objectGeometry.uvs),
     xrGl.STATIC_DRAW
   );
 
+  xrShadeBuffer = xrGl.createBuffer();
+  xrGl.bindBuffer(xrGl.ARRAY_BUFFER, xrShadeBuffer);
+  xrGl.bufferData(
+    xrGl.ARRAY_BUFFER,
+    new Float32Array(objectGeometry.shades),
+    xrGl.STATIC_DRAW
+  );
+
+  xrGl.enable(xrGl.DEPTH_TEST);
+  xrGl.depthFunc(xrGl.LEQUAL);
   xrGl.enable(xrGl.BLEND);
   xrGl.blendFunc(xrGl.SRC_ALPHA, xrGl.ONE_MINUS_SRC_ALPHA);
+}
+
+function createXRObjectGeometry() {
+  const positions = [];
+  const uvs = [];
+  const shades = [];
+
+  const addPlane = (ax, az, bx, bz, shade) => {
+    positions.push(
+      -ax, -0.5, -az,
+       ax, -0.5,  az,
+      -ax,  0.5, -az,
+      -ax,  0.5, -az,
+       ax, -0.5,  az,
+       ax,  0.5,  az,
+
+      -bx, -0.5, -bz,
+       bx, -0.5,  bz,
+      -bx,  0.5, -bz,
+      -bx,  0.5, -bz,
+       bx, -0.5,  bz,
+       bx,  0.5,  bz
+    );
+
+    for (let i = 0; i < 2; i++) {
+      uvs.push(
+        0, 1,
+        1, 1,
+        0, 0,
+        0, 0,
+        1, 1,
+        1, 0
+      );
+    }
+
+    for (let i = 0; i < 12; i++) {
+      shades.push(shade);
+    }
+  };
+
+  addPlane(0.5, 0, 0, 0.5, 1);
+  addPlane(0.35, 0.35, 0.35, -0.35, 0.72);
+
+  return { positions, uvs, shades };
 }
 
 function createXRShader(type, source) {
@@ -644,22 +699,27 @@ function onXRFrame(time, frame) {
   for (const xrView of pose.views) {
     const viewport = layer.getViewport(xrView);
     xrGl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
-    renderXRObjects(xrView, pose.transform.matrix);
+    renderXRObjects(xrView);
   }
 }
 
-function renderXRObjects(view, viewerMatrix) {
+function renderXRObjects(view) {
   xrGl.useProgram(xrProgram);
 
   const positionLocation = xrGl.getAttribLocation(xrProgram, "a_position");
   xrGl.bindBuffer(xrGl.ARRAY_BUFFER, xrPositionBuffer);
   xrGl.enableVertexAttribArray(positionLocation);
-  xrGl.vertexAttribPointer(positionLocation, 2, xrGl.FLOAT, false, 0, 0);
+  xrGl.vertexAttribPointer(positionLocation, 3, xrGl.FLOAT, false, 0, 0);
 
   const uvLocation = xrGl.getAttribLocation(xrProgram, "a_uv");
   xrGl.bindBuffer(xrGl.ARRAY_BUFFER, xrUvBuffer);
   xrGl.enableVertexAttribArray(uvLocation);
   xrGl.vertexAttribPointer(uvLocation, 2, xrGl.FLOAT, false, 0, 0);
+
+  const shadeLocation = xrGl.getAttribLocation(xrProgram, "a_shade");
+  xrGl.bindBuffer(xrGl.ARRAY_BUFFER, xrShadeBuffer);
+  xrGl.enableVertexAttribArray(shadeLocation);
+  xrGl.vertexAttribPointer(shadeLocation, 1, xrGl.FLOAT, false, 0, 0);
 
   const matrixLocation = xrGl.getUniformLocation(xrProgram, "u_matrix");
   const alphaLocation = xrGl.getUniformLocation(xrProgram, "u_alpha");
@@ -690,7 +750,7 @@ function renderXRObjects(view, viewerMatrix) {
 
     if (alpha <= 0.01) return;
 
-    const modelMatrix = makeBillboardMatrix(object, viewerMatrix, scale);
+    const modelMatrix = makeXRObjectMatrix(object, scale);
     const matrix = multiplyMat4(viewProjection, modelMatrix);
 
     xrGl.activeTexture(xrGl.TEXTURE0);
@@ -698,7 +758,7 @@ function renderXRObjects(view, viewerMatrix) {
     xrGl.uniform1i(textureLocation, 0);
     xrGl.uniform1f(alphaLocation, alpha);
     xrGl.uniformMatrix4fv(matrixLocation, false, matrix);
-    xrGl.drawArrays(xrGl.TRIANGLE_STRIP, 0, 4);
+    xrGl.drawArrays(xrGl.TRIANGLES, 0, XR_OBJECT_VERTEX_COUNT);
   });
 }
 
@@ -772,6 +832,7 @@ function spawnXRObject(nearView = false) {
     isTarget: !!asset.isTarget,
     position: anchoredPosition,
     size,
+    yaw: randF(0, Math.PI * 2),
     createdAt: now,
     lifetime: randomNumber(9000, 18000),
     caught: false,
@@ -917,6 +978,7 @@ function stopXRSession(endSession = true) {
     if (xrProgram) { xrGl.deleteProgram(xrProgram); xrProgram = null; }
     if (xrPositionBuffer) { xrGl.deleteBuffer(xrPositionBuffer); xrPositionBuffer = null; }
     if (xrUvBuffer) { xrGl.deleteBuffer(xrUvBuffer); xrUvBuffer = null; }
+    if (xrShadeBuffer) { xrGl.deleteBuffer(xrShadeBuffer); xrShadeBuffer = null; }
     xrTextures.forEach((tex) => xrGl.deleteTexture(tex));
     xrTextures.clear();
     xrGl = null;
@@ -2059,11 +2121,14 @@ function multiplyMat4(a, b) {
   return out;
 }
 
-function makeBillboardMatrix(object, cameraMatrix, scale = 1) {
+function makeXRObjectMatrix(object, scale = 1) {
   const size = object.size * scale;
-  const right = [cameraMatrix[0], cameraMatrix[1], cameraMatrix[2]];
-  const up = [cameraMatrix[4], cameraMatrix[5], cameraMatrix[6]];
-  const forward = [cameraMatrix[8], cameraMatrix[9], cameraMatrix[10]];
+  const yaw = object.yaw || 0;
+  const cos = Math.cos(yaw);
+  const sin = Math.sin(yaw);
+  const right = [cos, 0, -sin];
+  const up = [0, 1, 0];
+  const forward = [sin, 0, cos];
 
   return new Float32Array([
     right[0] * size, right[1] * size, right[2] * size, 0,
