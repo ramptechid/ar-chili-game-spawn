@@ -102,6 +102,8 @@ const CHILI_LIFETIME_MAX  = 9000;
 const CHILI_SCREEN_COUNT  = 6;
 // How many chilies exist in the full AR world when orientation is active
 const CHILI_WORLD_COUNT   = 10;
+// How many chilies exist in true WebXR AR world
+const CHILI_XR_COUNT      = 12;
 
 // Virtual world search radius (in degrees) around starting orientation
 const WORLD_RANGE_H = 44;   // ±degrees horizontal
@@ -130,15 +132,20 @@ let playAgainCooldownInterval = null;
 let cameraStarted = false;
 let cameraStream = null;
 
-// Device orientation for world-anchoring chilies
+// Device orientation for world-anchoring chilies (fallback mode)
 let orientationActive = false;
 let baseGamma     = null;
 let baseBeta      = null;
-let rawGamma      = 0;   // latest raw reading from sensor
+let rawGamma      = 0;
 let rawBeta       = 0;
-let smoothGamma   = 0;   // exponentially smoothed value used for rendering
+let smoothGamma   = 0;
 let smoothBeta    = 0;
 let orientLoopId  = null;
+
+// WebXR AR mode
+let xrSession  = null;
+let xrRefSpace = null;
+let useWebXR   = false;
 
 document.body.classList.add("intro-mode");
 
@@ -311,19 +318,195 @@ function stopCamera() {
 }
 
 /* =========================
+   WEBXR AR
+========================= */
+
+async function checkXRSupport() {
+  if (!navigator.xr) return false;
+  try {
+    return await navigator.xr.isSessionSupported("immersive-ar");
+  } catch {
+    return false;
+  }
+}
+
+async function startWebXR() {
+  try {
+    xrSession = await navigator.xr.requestSession("immersive-ar", {
+      requiredFeatures: ["dom-overlay"],
+      optionalFeatures: ["local-floor"],
+      domOverlay: { root: document.body }
+    });
+
+    xrRefSpace = await xrSession.requestReferenceSpace("local");
+    xrSession.addEventListener("end", onXRSessionEnd);
+
+    useWebXR = true;
+    document.body.classList.add("xr-mode");
+
+    xrSession.requestAnimationFrame(onXRFrame);
+    return true;
+  } catch (e) {
+    console.warn("WebXR AR failed:", e);
+    useWebXR = false;
+    return false;
+  }
+}
+
+function stopWebXR() {
+  if (xrSession) {
+    xrSession.end().catch(() => {});
+  }
+}
+
+function onXRSessionEnd() {
+  xrSession  = null;
+  xrRefSpace = null;
+  useWebXR   = false;
+  document.body.classList.remove("xr-mode");
+}
+
+function onXRFrame(time, frame) {
+  if (!xrSession) return;
+  xrSession.requestAnimationFrame(onXRFrame);
+  if (!gameRunning) return;
+
+  const pose = frame.getViewerPose(xrRefSpace);
+  if (!pose) return;
+
+  const view = pose.views[0];
+  repositionChiliesXR(
+    view.transform.inverse.matrix,
+    view.projectionMatrix
+  );
+}
+
+// Project a world-space 3D point → 2D screen pixel
+function project3D(wx, wy, wz, vm, pm, sw, sh) {
+  // View transform (column-major)
+  const vx = vm[0]*wx + vm[4]*wy + vm[8]*wz  + vm[12];
+  const vy = vm[1]*wx + vm[5]*wy + vm[9]*wz  + vm[13];
+  const vz = vm[2]*wx + vm[6]*wy + vm[10]*wz + vm[14];
+  const vw = vm[3]*wx + vm[7]*wy + vm[11]*wz + vm[15];
+
+  // Projection transform
+  const cx = pm[0]*vx + pm[4]*vy + pm[8]*vz  + pm[12]*vw;
+  const cy = pm[1]*vx + pm[5]*vy + pm[9]*vz  + pm[13]*vw;
+  const cw = pm[3]*vx + pm[7]*vy + pm[11]*vz + pm[15]*vw;
+
+  return {
+    x: (cx / cw + 1) * 0.5 * sw,
+    y: (1 - cy / cw) * 0.5 * sh,
+    w: cw
+  };
+}
+
+function repositionChiliesXR(vm, pm) {
+  const sw = window.innerWidth;
+  const sh = window.innerHeight;
+
+  document.querySelectorAll(".chili").forEach((chili) => {
+    if (chili.dataset.caught === "true") return;
+    if (chili.dataset.wx === undefined) return;
+
+    const wx = parseFloat(chili.dataset.wx);
+    const wy = parseFloat(chili.dataset.wy);
+    const wz = parseFloat(chili.dataset.wz);
+    const hs = parseFloat(chili.dataset.hs);
+
+    const p = project3D(wx, wy, wz, vm, pm, sw, sh);
+
+    // Behind camera or far off-screen → hide
+    if (p.w <= 0 || p.x < -hs * 3 || p.x > sw + hs * 3 ||
+                    p.y < -hs * 3 || p.y > sh + hs * 3) {
+      chili.style.visibility = "hidden";
+      return;
+    }
+
+    // Depth-based scale: closer = bigger
+    const dist  = Math.sqrt(wx * wx + wy * wy + wz * wz) || 1;
+    const scale = Math.min(2.2, Math.max(0.35, 3 / dist));
+
+    chili.style.visibility    = "";
+    chili.style.left          = `${p.x - hs}px`;
+    chili.style.top           = `${p.y - hs}px`;
+    chili.style.transform     = `scale(${scale})`;
+    chili.style.transformOrigin = "center center";
+  });
+}
+
+function spawnChiliXR(nearView = false) {
+  const size = randomNumber(60, 88);
+  const hs   = size / 2;
+
+  // Distances: near 1–2 m, world 1.5–3.5 m
+  const dist   = nearView ? randF(1.0, 2.0) : randF(1.5, 3.5);
+  const maxH   = nearView ? 0.45 : 1.1;  // radians horizontal
+  const maxV   = nearView ? 0.28 : 0.45; // radians vertical
+
+  const angleH = randF(-maxH, maxH);
+  const angleV = randF(-maxV, maxV);
+
+  // Convert spherical → Cartesian (WebXR: -Z = forward, +Y = up)
+  const wx =  Math.sin(angleH) * Math.cos(angleV) * dist;
+  const wy =  Math.sin(angleV) * dist - 0.15;        // slightly below eye
+  const wz = -Math.cos(angleH) * Math.cos(angleV) * dist;
+
+  const chili = document.createElement("img");
+  chili.src       = "assets/images/chili-green.png";
+  chili.className = "chili";
+  chili.alt       = "Green Chili";
+  chili.style.width      = `${size}px`;
+  chili.style.rotate     = `${randomNumber(-35, 35)}deg`;
+  chili.style.visibility = "hidden"; // shown once XR frame positions it
+  chili.dataset.wx     = wx;
+  chili.dataset.wy     = wy;
+  chili.dataset.wz     = wz;
+  chili.dataset.hs     = hs;
+  chili.dataset.caught = "false";
+
+  chili.addEventListener("pointerdown", (e) => {
+    e.stopPropagation();
+    if (!gameRunning || chili.dataset.caught === "true") return;
+    const rect = chili.getBoundingClientRect();
+    collectChili(chili, rect.left, rect.top);
+  });
+
+  gameArea.appendChild(chili);
+
+  const duration = randomNumber(CHILI_LIFETIME_MIN, CHILI_LIFETIME_MAX);
+  setTimeout(() => {
+    if (chili.parentElement && chili.dataset.caught !== "true") {
+      expireChili(chili);
+    }
+  }, duration);
+}
+
+/* =========================
    GAME FLOW
 ========================= */
 
 async function startGame() {
-  const cameraReady = await startCamera();
+  // ── Try WebXR AR first (Android Chrome 81+) ────────────────────────────
+  const xrOK = await checkXRSupport();
 
-  if (!cameraReady) {
-    return;
+  if (xrOK) {
+    const xrStarted = await startWebXR();
+    if (xrStarted) {
+      beginGameplay();
+      return;
+    }
   }
 
-  // Start orientation tracking so chilies are world-anchored (non-blocking)
-  startOrientationTracking();
+  // ── Fallback: manual camera + DeviceOrientation ────────────────────────
+  const cameraReady = await startCamera();
+  if (!cameraReady) return;
 
+  startOrientationTracking();
+  beginGameplay();
+}
+
+function beginGameplay() {
   resetGameData();
 
   document.body.classList.remove("intro-mode");
@@ -381,26 +564,33 @@ function runTimer() {
 function runSpawner() {
   clearInterval(spawnInterval);
 
-  // Wait briefly for orientation sensor to initialise before first spawn
+  // WebXR: spawn immediately (world positions don't need sensor init)
+  // Orientation: wait 600ms for sensor to initialise
+  const delay = useWebXR ? 0 : 600;
+
   setTimeout(() => {
     if (!gameRunning) return;
 
-    const arMode     = baseGamma !== null;
-    const total      = arMode ? CHILI_WORLD_COUNT : CHILI_SCREEN_COUNT;
-    const nearCount  = arMode ? 3 : total; // first 3 spawn near camera view
+    const total     = useWebXR ? CHILI_XR_COUNT
+                    : baseGamma !== null ? CHILI_WORLD_COUNT
+                    : CHILI_SCREEN_COUNT;
+    const nearCount = useWebXR ? 4
+                    : baseGamma !== null ? 3
+                    : total;
 
     for (let i = 0; i < total; i++) {
       setTimeout(() => {
         if (gameRunning) spawnChili(i < nearCount);
       }, i * 200);
     }
-  }, 600);
+  }, delay);
 
-  // Continuously maintain target chili count in the world
   spawnInterval = setInterval(() => {
     if (!gameRunning) return;
 
-    const target  = baseGamma !== null ? CHILI_WORLD_COUNT : CHILI_SCREEN_COUNT;
+    const target  = useWebXR ? CHILI_XR_COUNT
+                  : baseGamma !== null ? CHILI_WORLD_COUNT
+                  : CHILI_SCREEN_COUNT;
     const current = document.querySelectorAll(".chili:not(.chili-expire)").length;
     if (current < target) spawnChili(false);
   }, SPAWN_SPEED);
@@ -426,8 +616,12 @@ function endGame() {
 
   loadLeaderboard();
 
-  stopOrientationTracking();
-  stopCamera();
+  if (useWebXR) {
+    stopWebXR();
+  } else {
+    stopOrientationTracking();
+    stopCamera();
+  }
 
   document.body.classList.remove("game-mode");
   document.body.classList.add("result-mode");
@@ -444,8 +638,12 @@ function resetToIntro() {
 
   gameArea.innerHTML = "";
 
-  stopOrientationTracking();
-  stopCamera();
+  if (useWebXR) {
+    stopWebXR();
+  } else {
+    stopOrientationTracking();
+    stopCamera();
+  }
 
   score = 0;
   timeLeft = GAME_DURATION;
@@ -500,9 +698,9 @@ function clearPlayAgainCooldown() {
    CHILI SPAWNING
 ========================= */
 
-// nearView=true → spawn inside current camera frame
-// nearView=false → spawn anywhere in the virtual world (may be off-screen)
 function spawnChili(nearView = false) {
+  if (useWebXR) { spawnChiliXR(nearView); return; }
+  // ── Orientation / screen fallback ─────────────────────────────────────
   const size = randomNumber(60, 92);
   const hs   = size / 2;
 

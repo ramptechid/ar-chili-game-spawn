@@ -67,6 +67,12 @@ body.result-mode .camera-overlay {
   opacity: 0;
 }
 
+/* In WebXR mode the browser provides the camera — hide our fallback elements */
+body.xr-mode #cameraView,
+body.xr-mode .camera-overlay {
+  display: none !important;
+}
+
 /* GAME AREA */
 #gameArea {
   position: fixed;
