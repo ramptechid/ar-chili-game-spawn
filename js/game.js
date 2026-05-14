@@ -106,11 +106,13 @@ const MIN_VISIBLE_CHILIES = 8;
 const VIEW_REFILL_COOLDOWN = 450;
 const OFFSCREEN_EXPIRE_MS = 900;
 const OFFSCREEN_MARGIN = 140;
-const XR_OBJECT_SCALE = 0.28;
-const XR_NEAR_DISTANCE_MIN = 1.6;
-const XR_NEAR_DISTANCE_MAX = 2.8;
-const XR_FAR_DISTANCE_MIN = 2.2;
-const XR_FAR_DISTANCE_MAX = 3.8;
+const XR_SIZE_MIN = 0.14;
+const XR_SIZE_MAX = 0.26;
+const XR_DISTANCE_MIN = 1.5;
+const XR_DISTANCE_MAX = 3.5;
+const XR_CATCH_ANIM_MS = 480;
+const XR_FADEIN_MS = 320;
+const XR_EXPIRE_MS = 520;
 const CHILI_SIZE_MIN = 34;
 const CHILI_SIZE_MAX = 82;
 const WORLD_RANGE_H = 24;
@@ -670,9 +672,28 @@ function renderXRObjects(view) {
   xrObjects.forEach((object) => {
     if (object.caught) return;
 
-    const modelMatrix = makeBillboardMatrix(object, cameraMatrix);
+    let alpha = 1;
+    let scale = 1;
+
+    if (object.catching) {
+      const t = clamp((now - object.catchStartAt) / XR_CATCH_ANIM_MS, 0, 1);
+      alpha = 1 - t;
+      scale = 1 + t * 0.8;
+    } else if (object.expiring) {
+      const t = clamp((now - object.expireStartedAt) / XR_EXPIRE_MS, 0, 1);
+      alpha = 1 - t;
+      scale = 1 - t * 0.45;
+    } else if (object.fadeIn) {
+      const t = clamp((now - object.fadeInStart) / XR_FADEIN_MS, 0, 1);
+      alpha = t;
+      scale = 0.55 + t * 0.45;
+      if (t >= 1) object.fadeIn = false;
+    }
+
+    if (alpha <= 0.01) return;
+
+    const modelMatrix = makeBillboardMatrix(object, cameraMatrix, scale);
     const matrix = multiplyMat4(viewProjection, modelMatrix);
-    const alpha = object.expiring ? Math.max(0, 1 - (now - object.expireStartedAt) / 380) : 1;
 
     xrGl.activeTexture(xrGl.TEXTURE0);
     xrGl.bindTexture(xrGl.TEXTURE_2D, xrTextures.get(object.asset.src));
@@ -688,8 +709,8 @@ function runXRSpawner() {
 
   for (let i = 0; i < INITIAL_CHILI_COUNT; i++) {
     setTimeout(() => {
-      if (gameRunning && xrActive) spawnXRObject(i < 1);
-    }, 260 + i * randomNumber(90, 230));
+      if (gameRunning && xrActive) spawnXRObject(false);
+    }, 300 + i * randomNumber(120, 260));
   }
 
   xrSpawnInterval = setInterval(() => {
@@ -707,35 +728,52 @@ function spawnXRObject(nearView = true) {
   const asset = getSpawnAssetXR();
   const cameraMatrix = xrLastPose.transform.matrix;
   const cameraPosition = [cameraMatrix[12], cameraMatrix[13], cameraMatrix[14]];
-  const right = [cameraMatrix[0], cameraMatrix[1], cameraMatrix[2]];
-  const up = [cameraMatrix[4], cameraMatrix[5], cameraMatrix[6]];
-  const forward = [-cameraMatrix[8], -cameraMatrix[9], -cameraMatrix[10]];
-  const distance = nearView ? randF(XR_NEAR_DISTANCE_MIN, XR_NEAR_DISTANCE_MAX) : randF(XR_FAR_DISTANCE_MIN, XR_FAR_DISTANCE_MAX);
-  const spreadX = nearView ? randF(-0.9, 0.9) : randF(-1.5, 1.5);
-  const spreadY = nearView ? randF(-0.38, 0.38) : randF(-0.7, 0.7);
-  const sizePx = randomNumber(asset.minSize || CHILI_SIZE_MIN, asset.maxSize || CHILI_SIZE_MAX);
-  const depth = randF(DEPTH_MIN, DEPTH_MAX);
-  const size = (sizePx / 100) * depth * XR_OBJECT_SCALE;
+
+  // Horizontal camera forward (ignore tilt/pitch)
+  const fwdX = -cameraMatrix[8];
+  const fwdZ = -cameraMatrix[10];
+  const fwdLen = Math.sqrt(fwdX * fwdX + fwdZ * fwdZ);
+  const nfX = fwdLen > 0.001 ? fwdX / fwdLen : 0;
+  const nfZ = fwdLen > 0.001 ? fwdZ / fwdLen : -1;
+  const nrX = nfZ;
+  const nrZ = -nfX;
+
+  // Near = front 180° arc, full = 360° around player
+  const angle = nearView
+    ? randF(-Math.PI / 2, Math.PI / 2)
+    : randF(0, Math.PI * 2);
+  const ca = Math.cos(angle);
+  const sa = Math.sin(angle);
+  const dirX = nfX * ca + nrX * sa;
+  const dirZ = nfZ * ca + nrZ * sa;
+
+  const distance = randF(XR_DISTANCE_MIN, XR_DISTANCE_MAX);
+  const heightOffset = randF(-0.55, 0.3);
+  const size = randF(XR_SIZE_MIN, XR_SIZE_MAX);
+  const now = performance.now();
 
   xrObjects.push({
     asset,
     isTarget: !!asset.isTarget,
-    position: addVec3(
-      addVec3(addVec3(cameraPosition, scaleVec3(forward, distance)), scaleVec3(right, spreadX)),
-      scaleVec3(up, spreadY)
-    ),
+    position: [
+      cameraPosition[0] + dirX * distance,
+      cameraPosition[1] + heightOffset,
+      cameraPosition[2] + dirZ * distance
+    ],
     size,
-    depth,
-    createdAt: performance.now(),
-    lifetime: randomNumber(CHILI_LIFETIME_MIN + 2500, CHILI_LIFETIME_MAX + 5000) + randomNumber(0, 2500),
+    createdAt: now,
+    lifetime: randomNumber(9000, 18000),
     caught: false,
-    expiring: false
+    catching: false,
+    expiring: false,
+    fadeIn: true,
+    fadeInStart: now
   });
 }
 
 function getSpawnAssetXR() {
   const activeCount = getActiveXRObjectCount();
-  const targetCount = xrObjects.filter((object) => object.isTarget && !object.caught && !object.expiring).length;
+  const targetCount = xrObjects.filter((object) => object.isTarget && !object.caught && !object.catching && !object.expiring).length;
   const desiredTargetCount = Math.max(MIN_TARGET_CHILIES, Math.round((activeCount + 1) * TARGET_SPAWN_RATIO));
 
   if (targetCount < desiredTargetCount || DECOY_ASSETS.length === 0) {
@@ -746,16 +784,23 @@ function getSpawnAssetXR() {
 }
 
 function expireXRObjects(time) {
-  xrObjects.forEach((object) => {
-    if (object.caught || object.expiring) return;
+  const now = performance.now();
 
-    if (time - object.createdAt >= object.lifetime) {
+  xrObjects.forEach((object) => {
+    if (object.caught || object.catching || object.expiring) return;
+
+    if (now - object.createdAt >= object.lifetime) {
       object.expiring = true;
-      object.expireStartedAt = time;
+      object.expireStartedAt = now;
     }
   });
 
-  xrObjects = xrObjects.filter((object) => !object.expiring || time - object.expireStartedAt < 420);
+  xrObjects = xrObjects.filter((object) => {
+    if (object.caught) return false;
+    if (object.catching) return performance.now() - object.catchStartAt < XR_CATCH_ANIM_MS + 60;
+    if (object.expiring) return performance.now() - object.expireStartedAt < XR_EXPIRE_MS + 60;
+    return true;
+  });
 }
 
 function refillXRCurrentView(time) {
@@ -768,11 +813,11 @@ function refillXRCurrentView(time) {
 }
 
 function getActiveXRObjectCount() {
-  return xrObjects.filter((object) => !object.caught && !object.expiring).length;
+  return xrObjects.filter((object) => !object.caught && !object.catching && !object.expiring).length;
 }
 
 function getVisibleXRObjectCount() {
-  return xrObjects.filter((object) => !object.caught && !object.expiring && isXRObjectInView(object)).length;
+  return xrObjects.filter((object) => !object.caught && !object.catching && !object.expiring && isXRObjectInView(object)).length;
 }
 
 function isXRObjectInView(object) {
@@ -792,7 +837,7 @@ function catchXRObjectByMarker() {
   const radius = 0.22;
 
   xrObjects.forEach((object) => {
-    if (object.caught || object.expiring) return;
+    if (object.caught || object.catching || object.expiring) return;
 
     const ndc = projectXRPoint(object.position, xrLastViewProjection);
     if (!ndc || ndc.z < -1 || ndc.z > 1) return;
@@ -823,9 +868,10 @@ function catchXRObjectByMarker() {
 }
 
 function collectXRObject(object) {
-  if (!gameRunning || object.caught) return;
+  if (!gameRunning || object.caught || object.catching) return;
 
-  object.caught = true;
+  object.catching = true;
+  object.catchStartAt = performance.now();
 
   if (object.isTarget) {
     score++;
@@ -836,15 +882,11 @@ function collectXRObject(object) {
     if (score >= TARGET_SCORE) {
       setTimeout(() => {
         endGame();
-      }, 320);
+      }, XR_CATCH_ANIM_MS + 80);
     }
   } else {
     showMissEffect();
   }
-
-  setTimeout(() => {
-    xrObjects = xrObjects.filter((item) => item !== object);
-  }, 280);
 }
 
 function stopXRSession(endSession = true) {
@@ -1981,8 +2023,8 @@ function multiplyMat4(a, b) {
   return out;
 }
 
-function makeBillboardMatrix(object, cameraMatrix) {
-  const size = object.size;
+function makeBillboardMatrix(object, cameraMatrix, scale = 1) {
+  const size = object.size * scale;
   const right = [cameraMatrix[0], cameraMatrix[1], cameraMatrix[2]];
   const up = [cameraMatrix[4], cameraMatrix[5], cameraMatrix[6]];
   const forward = [cameraMatrix[8], cameraMatrix[9], cameraMatrix[10]];
