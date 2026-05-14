@@ -94,18 +94,18 @@ const leaderboardList = document.getElementById("leaderboardList");
 
 const GAME_DURATION       = 60;
 const PLAY_AGAIN_COOLDOWN = 5;
-const CHILI_LIFETIME_MIN  = 4200;
-const CHILI_LIFETIME_MAX  = 11000;
+const CHILI_LIFETIME_MIN  = 3600;
+const CHILI_LIFETIME_MAX  = 12500;
 const NEXT_CHILI_OVERLAP_MIN = 900;
 const NEXT_CHILI_OVERLAP_MAX = 2400;
-const MAX_ACTIVE_CHILIES = 10;
-const INITIAL_CHILI_COUNT = 8;
-const SPAWN_REFILL_INTERVAL = 700;
+const MAX_ACTIVE_CHILIES = 12;
+const INITIAL_CHILI_COUNT = 9;
+const SPAWN_REFILL_INTERVAL = 900;
 const CHILI_SIZE_MIN = 34;
 const CHILI_SIZE_MAX = 82;
 const WORLD_RANGE_H = 24;
 const WORLD_RANGE_V = 16;
-const MIN_CHILI_SCREEN_DISTANCE = 220;
+const MIN_CHILI_SCREEN_DISTANCE = 78;
 const DEPTH_MIN = 0.58;
 const DEPTH_MAX = 1.1;
 const TARGET_SPAWN_RATIO = 0.2;
@@ -450,14 +450,14 @@ function runSpawner() {
   clearSpawnTimers();
 
   for (let i = 0; i < INITIAL_CHILI_COUNT; i++) {
-    scheduleNextChili(450 + i * randomNumber(260, 620), i < 2);
+    scheduleNextChili(350 + i * randomNumber(180, 420), i < 2);
   }
 
   spawnInterval = setInterval(() => {
     if (!gameRunning) return;
 
     if (getActiveChiliCount() < MAX_ACTIVE_CHILIES) {
-      spawnChili(false);
+      scheduleNextChili(randomNumber(120, 520), false);
     }
   }, SPAWN_REFILL_INTERVAL);
 }
@@ -653,7 +653,7 @@ function spawnChili(nearView = false) {
     chili.style.filter = `brightness(${brightness}) saturate(${saturate}) drop-shadow(0 ${shadowY}px ${shadowBlur}px rgba(0,0,0,${shadowAlpha}))`;
   }, 300);
 
-  const duration = randomNumber(CHILI_LIFETIME_MIN, CHILI_LIFETIME_MAX);
+  const duration = randomNumber(CHILI_LIFETIME_MIN, CHILI_LIFETIME_MAX) + randomNumber(0, 1800);
   const overlap = randomNumber(NEXT_CHILI_OVERLAP_MIN, NEXT_CHILI_OVERLAP_MAX);
   scheduleNextChili(Math.max(900, duration - overlap), false);
 
