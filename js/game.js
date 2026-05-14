@@ -106,6 +106,11 @@ const MIN_VISIBLE_CHILIES = 8;
 const VIEW_REFILL_COOLDOWN = 450;
 const OFFSCREEN_EXPIRE_MS = 900;
 const OFFSCREEN_MARGIN = 140;
+const XR_OBJECT_SCALE = 0.28;
+const XR_NEAR_DISTANCE_MIN = 1.6;
+const XR_NEAR_DISTANCE_MAX = 2.8;
+const XR_FAR_DISTANCE_MIN = 2.2;
+const XR_FAR_DISTANCE_MAX = 3.8;
 const CHILI_SIZE_MIN = 34;
 const CHILI_SIZE_MAX = 82;
 const WORLD_RANGE_H = 24;
@@ -685,12 +690,12 @@ function spawnXRObject(nearView = true) {
   const right = [cameraMatrix[0], cameraMatrix[1], cameraMatrix[2]];
   const up = [cameraMatrix[4], cameraMatrix[5], cameraMatrix[6]];
   const forward = [-cameraMatrix[8], -cameraMatrix[9], -cameraMatrix[10]];
-  const distance = nearView ? randF(1.25, 2.2) : randF(1.8, 3.2);
-  const spreadX = nearView ? randF(-0.8, 0.8) : randF(-1.4, 1.4);
-  const spreadY = nearView ? randF(-0.35, 0.35) : randF(-0.65, 0.65);
+  const distance = nearView ? randF(XR_NEAR_DISTANCE_MIN, XR_NEAR_DISTANCE_MAX) : randF(XR_FAR_DISTANCE_MIN, XR_FAR_DISTANCE_MAX);
+  const spreadX = nearView ? randF(-0.9, 0.9) : randF(-1.5, 1.5);
+  const spreadY = nearView ? randF(-0.38, 0.38) : randF(-0.7, 0.7);
   const sizePx = randomNumber(asset.minSize || CHILI_SIZE_MIN, asset.maxSize || CHILI_SIZE_MAX);
   const depth = randF(DEPTH_MIN, DEPTH_MAX);
-  const size = (sizePx / 100) * depth;
+  const size = (sizePx / 100) * depth * XR_OBJECT_SCALE;
 
   xrObjects.push({
     asset,
@@ -702,7 +707,7 @@ function spawnXRObject(nearView = true) {
     size,
     depth,
     createdAt: performance.now(),
-    lifetime: randomNumber(CHILI_LIFETIME_MIN, CHILI_LIFETIME_MAX) + randomNumber(0, 1800),
+    lifetime: randomNumber(CHILI_LIFETIME_MIN + 2500, CHILI_LIFETIME_MAX + 5000) + randomNumber(0, 2500),
     caught: false,
     expiring: false
   });
@@ -724,7 +729,7 @@ function expireXRObjects(time) {
   xrObjects.forEach((object) => {
     if (object.caught || object.expiring) return;
 
-    if (time - object.createdAt >= object.lifetime || !isXRObjectInView(object)) {
+    if (time - object.createdAt >= object.lifetime) {
       object.expiring = true;
       object.expireStartedAt = time;
     }
