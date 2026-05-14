@@ -252,8 +252,8 @@ function projectWorldChili(chili) {
   const wb = parseFloat(chili.dataset.wb);
   const hs = parseFloat(chili.dataset.hs);
 
-  chili.style.left = `${cx + (wg - smoothGamma) * PX_PER_DEG_H - hs}px`;
-  chili.style.top = `${cy + (wb - smoothBeta) * PX_PER_DEG_V - hs}px`;
+  chili.style.left = `${cx - (wg - smoothGamma) * PX_PER_DEG_H - hs}px`;
+  chili.style.top = `${cy - (wb - smoothBeta) * PX_PER_DEG_V - hs}px`;
 }
 
 function resetAimMarker() {
@@ -618,8 +618,8 @@ function getSpacedWorldSpawn(centerGamma, centerBeta, rangeH, rangeV) {
 function getNearestChiliScreenDistance(wg, wb) {
   const cx = window.innerWidth / 2;
   const cy = window.innerHeight / 2;
-  const x = cx + (wg - smoothGamma) * PX_PER_DEG_H;
-  const y = cy + (wb - smoothBeta) * PX_PER_DEG_V;
+  const x = cx - (wg - smoothGamma) * PX_PER_DEG_H;
+  const y = cy - (wb - smoothBeta) * PX_PER_DEG_V;
   let nearest = Infinity;
 
   document.querySelectorAll(".chili:not(.chili-expire)").forEach((chili) => {
