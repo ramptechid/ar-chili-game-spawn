@@ -2067,7 +2067,11 @@ async function submitScore() {
 ========================= */
 
 async function shareScoreImage() {
+  shareBtn.disabled = true;
+
   try {
+    closeAppNotice();
+
     const resultTime = formatElapsedTime(elapsedTime);
     const imageBlob = await createScoreImageBlob(resultTime);
 
@@ -2100,12 +2104,29 @@ async function shareScoreImage() {
 
     downloadScoreImage(imageBlob);
   } catch (error) {
+    if (isShareCancelError(error)) {
+      return;
+    }
+
     console.error("Share error:", error);
     showAppNotice(
       "Share Unavailable",
       "Share is not available on this browser."
     );
+  } finally {
+    shareBtn.disabled = false;
   }
+}
+
+function isShareCancelError(error) {
+  const name = (error?.name || "").toLowerCase();
+  const message = (error?.message || "").toLowerCase();
+
+  return (
+    name === "aborterror" ||
+    message.includes("cancel") ||
+    message.includes("abort")
+  );
 }
 
 function createScoreImageBlob(scoreValue) {
