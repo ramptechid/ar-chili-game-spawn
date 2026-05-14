@@ -92,7 +92,7 @@ const leaderboardList = document.getElementById("leaderboardList");
    GAME CONFIG
 ========================= */
 
-const GAME_DURATION       = 60;
+const TARGET_SCORE        = 10;
 const PLAY_AGAIN_COOLDOWN = 5;
 const CHILI_LIFETIME_MIN  = 3600;
 const CHILI_LIFETIME_MAX  = 12500;
@@ -159,7 +159,7 @@ const ORIENT_DEADZONE = 0.035;
 ========================= */
 
 let score = 0;
-let timeLeft = GAME_DURATION;
+let elapsedTime = 0;
 let gameRunning = false;
 let scoreSaved = false;
 
@@ -409,15 +409,16 @@ async function startGame() {
 
 function resetGameData() {
   score = 0;
-  timeLeft = GAME_DURATION;
+  elapsedTime = 0;
   scoreSaved = false;
 
-  scoreText.textContent = score;
-  timerText.textContent = timeLeft;
-  finalScoreText.textContent = score;
+  updateScoreText();
+  timerText.textContent = formatElapsedTime(elapsedTime);
+  finalScoreText.textContent = formatElapsedTime(elapsedTime);
 
   topFiveInfo.classList.add("hidden");
-  saveScoreBtn.classList.remove("hidden");
+  saveScoreBtn.classList.add("hidden");
+  renderLocalResult();
 
   gameArea.innerHTML = "";
   resetAimMarker();
@@ -432,17 +433,8 @@ function runTimer() {
   timerInterval = setInterval(() => {
     if (!gameRunning) return;
 
-    timeLeft--;
-
-    if (timeLeft < 0) {
-      timeLeft = 0;
-    }
-
-    timerText.textContent = timeLeft;
-
-    if (timeLeft <= 0) {
-      endGame();
-    }
+    elapsedTime++;
+    timerText.textContent = formatElapsedTime(elapsedTime);
   }, 1000);
 }
 
@@ -495,14 +487,14 @@ function endGame() {
   resetAimMarker();
   gameHud.classList.add("hidden");
 
-  finalScoreText.textContent = score;
+  finalScoreText.textContent = formatElapsedTime(elapsedTime);
 
   scoreSaved = false;
   topFiveInfo.classList.add("hidden");
-  saveScoreBtn.classList.remove("hidden");
+  saveScoreBtn.classList.add("hidden");
   startPlayAgainCooldown();
 
-  loadLeaderboard();
+  renderLocalResult();
 
   stopOrientationTracking();
   stopCamera();
@@ -527,15 +519,15 @@ function resetToIntro() {
   stopCamera();
 
   score = 0;
-  timeLeft = GAME_DURATION;
+  elapsedTime = 0;
   scoreSaved = false;
 
-  scoreText.textContent = score;
-  timerText.textContent = timeLeft;
-  finalScoreText.textContent = score;
+  updateScoreText();
+  timerText.textContent = formatElapsedTime(elapsedTime);
+  finalScoreText.textContent = formatElapsedTime(elapsedTime);
 
   topFiveInfo.classList.add("hidden");
-  saveScoreBtn.classList.remove("hidden");
+  saveScoreBtn.classList.add("hidden");
   closeSaveScoreModal();
 
   resultScreen.classList.remove("active");
@@ -879,10 +871,16 @@ function collectChili(chili, x, y) {
 
   if (isTarget) {
     score++;
-    scoreText.textContent = score;
+    updateScoreText();
 
     createHitEffect(x, y);
     createPlusOne(x, y);
+
+    if (score >= TARGET_SCORE) {
+      setTimeout(() => {
+        endGame();
+      }, 320);
+    }
   } else {
     showMissEffect();
   }
@@ -951,19 +949,7 @@ function createPlusOne(x, y) {
 ========================= */
 
 async function loadLeaderboard() {
-  try {
-    const result = await fetchJson(GET_LEADERBOARD_API);
-
-    if (!result.success) {
-      renderLeaderboard([]);
-      return;
-    }
-
-    renderLeaderboard(result.leaderboard || []);
-  } catch (error) {
-    console.error("Leaderboard error:", error);
-    renderLeaderboard([]);
-  }
+  renderLocalResult();
 }
 
 function renderLeaderboard(leaderboard) {
@@ -999,12 +985,26 @@ function renderLeaderboard(leaderboard) {
   });
 }
 
+function renderLocalResult() {
+  leaderboardList.innerHTML = "";
+
+  const row = document.createElement("div");
+  row.className = "leaderboard-item";
+  row.innerHTML = `
+    <span class="leaderboard-rank">10x</span>
+    <span class="leaderboard-name">Completed in</span>
+    <span class="leaderboard-score">${formatElapsedTime(elapsedTime)}</span>
+  `;
+
+  leaderboardList.appendChild(row);
+}
+
 /* =========================
    SAVE SCORE API
 ========================= */
 
 function openSaveScoreModal() {
-  modalScoreText.textContent = score;
+  modalScoreText.textContent = formatElapsedTime(elapsedTime);
   playerNameInput.value = "";
   playerEmailInput.value = "";
   saveMessage.textContent = "";
@@ -1031,85 +1031,9 @@ function closeAppNotice() {
   appNotice.classList.add("hidden");
 }
 
-async function submitScore() {
-  const playerName = playerNameInput.value.trim();
-  const playerEmail = playerEmailInput.value.trim().toLowerCase();
-
-  if (playerName === "") {
-    saveMessage.textContent = "Please enter your name.";
-    saveMessage.className = "save-message error";
-    return;
-  }
-
-  if (playerEmail === "") {
-    saveMessage.textContent = "Please enter your email.";
-    saveMessage.className = "save-message error";
-    return;
-  }
-
-  if (!isValidEmail(playerEmail)) {
-    saveMessage.textContent = "Please enter a valid email address.";
-    saveMessage.className = "save-message error";
-    return;
-  }
-
-  submitScoreBtn.disabled = true;
-  submitScoreBtn.textContent = "Saving...";
-
-  saveMessage.textContent = "";
-  saveMessage.className = "save-message";
-
-  try {
-    const result = await fetchJson(SAVE_SCORE_API, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        name: playerName,
-        email: playerEmail,
-        score: Number(score)
-      })
-    });
-
-    if (!result.success) {
-      saveMessage.textContent = result.message || "Failed to save score.";
-      saveMessage.className = "save-message error";
-      return;
-    }
-
-    scoreSaved = true;
-
-    if (result.email_sent) {
-      saveMessage.textContent = "Score saved! Please check your email for your QR Code.";
-    } else {
-      saveMessage.textContent = "Score saved, but email could not be sent. Please contact the game admin.";
-    }
-
-    saveMessage.className = "save-message success";
-
-    saveScoreBtn.classList.add("hidden");
-
-    if (result.is_top_five) {
-      topFiveInfo.textContent = "Your score made it into the Top 5!";
-      topFiveInfo.classList.remove("hidden");
-    } else {
-      topFiveInfo.classList.add("hidden");
-    }
-
-    await loadLeaderboard();
-
-    setTimeout(() => {
-      closeSaveScoreModal();
-    }, 1200);
-  } catch (error) {
-    console.error("Save score error:", error);
-    saveMessage.textContent = error.message || "Connection error. Please try again.";
-    saveMessage.className = "save-message error";
-  } finally {
-    submitScoreBtn.disabled = false;
-    submitScoreBtn.textContent = "Save";
-  }
+function submitScore() {
+  saveMessage.textContent = "Online score saving is disabled for now.";
+  saveMessage.className = "save-message error";
 }
 
 /* =========================
@@ -1118,7 +1042,8 @@ async function submitScore() {
 
 async function shareScoreImage() {
   try {
-    const imageBlob = await createScoreImageBlob(score);
+    const resultTime = formatElapsedTime(elapsedTime);
+    const imageBlob = await createScoreImageBlob(resultTime);
 
     const file = new File(
       [imageBlob],
@@ -1131,7 +1056,7 @@ async function shareScoreImage() {
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({
         title: "Green Chili Hunt Score",
-        text: `I collected ${score} green chilies in Green Chili Hunt!`,
+        text: `I collected 10 green chilies in ${resultTime}!`,
         files: [file]
       });
 
@@ -1141,7 +1066,7 @@ async function shareScoreImage() {
     if (navigator.share) {
       await navigator.share({
         title: "Green Chili Hunt Score",
-        text: `I collected ${score} green chilies in Green Chili Hunt!`
+        text: `I collected 10 green chilies in ${resultTime}!`
       });
 
       return;
@@ -1191,7 +1116,7 @@ function createScoreImageBlob(scoreValue) {
 
     ctx.font = "400 44px Arial";
     ctx.fillStyle = "rgba(255, 255, 255, 0.78)";
-    ctx.fillText("My Final Score", 540, 545);
+    ctx.fillText("Time to collect 10 chilies", 540, 545);
 
     ctx.font = "900 230px Arial";
     ctx.fillStyle = "#ffffff";
@@ -1201,7 +1126,7 @@ function createScoreImageBlob(scoreValue) {
 
     ctx.font = "500 44px Arial";
     ctx.fillStyle = "rgba(255, 255, 255, 0.84)";
-    ctx.fillText("Can you beat my score?", 540, 1290);
+    ctx.fillText("Can you beat my time?", 540, 1290);
 
     ctx.fillStyle = "rgba(255, 255, 255, 0.12)";
     roundRect(ctx, 150, 1420, 780, 145, 42);
@@ -1305,6 +1230,21 @@ function getDistance(x1, y1, x2, y2) {
   const dy = y2 - y1;
 
   return Math.sqrt(dx * dx + dy * dy);
+}
+
+function updateScoreText() {
+  scoreText.textContent = `${Math.min(score, TARGET_SCORE)}/${TARGET_SCORE}`;
+}
+
+function formatElapsedTime(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (minutes <= 0) {
+    return `${seconds}s`;
+  }
+
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
 function smoothAngle(current, target) {
