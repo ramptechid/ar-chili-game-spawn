@@ -678,7 +678,7 @@ function renderXRObjects(view) {
     if (object.catching) {
       const t = clamp((now - object.catchStartAt) / XR_CATCH_ANIM_MS, 0, 1);
       alpha = 1 - t;
-      scale = 1 + t * 0.8;
+      scale = 1 - t * 0.5;
     } else if (object.expiring) {
       const t = clamp((now - object.expireStartedAt) / XR_EXPIRE_MS, 0, 1);
       alpha = 1 - t;
