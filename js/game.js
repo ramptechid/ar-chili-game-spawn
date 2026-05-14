@@ -106,8 +106,10 @@ const MIN_VISIBLE_CHILIES = 10;
 const VIEW_REFILL_COOLDOWN = 450;
 const OFFSCREEN_EXPIRE_MS = 900;
 const OFFSCREEN_MARGIN = 140;
-const XR_SIZE_MIN = 0.15;
-const XR_SIZE_MAX = 0.28;
+const XR_MAX_ACTIVE_OBJECTS = 18;
+const XR_INITIAL_OBJECTS = 12;
+const XR_SIZE_MIN = 0.07;
+const XR_SIZE_MAX = 0.14;
 const XR_DISTANCE_MIN = 1.2;
 const XR_DISTANCE_MAX = 4.2;
 const XR_CATCH_ANIM_MS = 480;
@@ -461,9 +463,6 @@ function stopCamera() {
 async function startXRSession() {
   if (!navigator.xr || !xrCanvas) return false;
 
-  const supported = await navigator.xr.isSessionSupported("immersive-ar").catch(() => false);
-  if (!supported) return false;
-
   try {
     if (!xrGl) {
       xrGl = xrCanvas.getContext("webgl", {
@@ -481,17 +480,11 @@ async function startXRSession() {
     }, { once: true });
 
     xrSession = await navigator.xr.requestSession("immersive-ar", {
-      requiredFeatures: ["dom-overlay"],
-      optionalFeatures: ["local-floor"],
+      optionalFeatures: ["dom-overlay", "local-floor"],
       domOverlay: {
         root: document.body
       }
     });
-
-    if (!xrSession.domOverlayState) {
-      await xrSession.end().catch(() => {});
-      return false;
-    }
 
     await xrGl.makeXRCompatible();
     xrSession.updateRenderState({
@@ -707,7 +700,7 @@ function renderXRObjects(view) {
 function runXRSpawner() {
   clearInterval(xrSpawnInterval);
 
-  for (let i = 0; i < INITIAL_CHILI_COUNT; i++) {
+  for (let i = 0; i < XR_INITIAL_OBJECTS; i++) {
     setTimeout(() => {
       if (gameRunning && xrActive) spawnXRObject(false);
     }, 300 + i * randomNumber(120, 260));
@@ -716,14 +709,14 @@ function runXRSpawner() {
   xrSpawnInterval = setInterval(() => {
     if (!gameRunning || !xrActive) return;
 
-    if (getActiveXRObjectCount() < MAX_ACTIVE_CHILIES) {
+    if (getActiveXRObjectCount() < XR_MAX_ACTIVE_OBJECTS) {
       spawnXRObject(false);
     }
   }, SPAWN_REFILL_INTERVAL);
 }
 
 function spawnXRObject(nearView = true) {
-  if (!xrLastPose || getActiveXRObjectCount() >= MAX_ACTIVE_CHILIES) return;
+  if (!xrLastPose || getActiveXRObjectCount() >= XR_MAX_ACTIVE_OBJECTS) return;
 
   const asset = getSpawnAssetXR();
   const cameraMatrix = xrLastPose.transform.matrix;
@@ -817,7 +810,7 @@ function expireXRObjects(time) {
 
 function refillXRCurrentView(time) {
   if (time - xrLastRefillAt < VIEW_REFILL_COOLDOWN) return;
-  if (getActiveXRObjectCount() >= MAX_ACTIVE_CHILIES) return;
+  if (getActiveXRObjectCount() >= XR_MAX_ACTIVE_OBJECTS) return;
 
   xrLastRefillAt = time;
   spawnXRObject(false);
