@@ -1256,7 +1256,7 @@ function resetGameData() {
 
   topFiveInfo.classList.add("hidden");
   saveScoreBtn.classList.add("hidden");
-  renderLocalResult();
+  renderLeaderboard([]);
 
   gameArea.innerHTML = "";
   resetAimMarker();
@@ -1848,7 +1848,7 @@ async function loadLeaderboard() {
     renderLeaderboard(leaderboard);
   } catch (error) {
     console.warn("Leaderboard unavailable:", error);
-    renderLocalResult();
+    renderLeaderboardUnavailable();
   }
 }
 
@@ -1893,28 +1893,18 @@ function normalizeLeaderboardResponse(data) {
   return [];
 }
 
-function renderLocalResult() {
+function renderLeaderboardUnavailable() {
   leaderboardList.innerHTML = "";
 
-  const dummyLeaderboard = [
-    { name: "Ava", time: 18 },
-    { name: "Noah", time: 23 },
-    { name: "Mia", time: 29 },
-    { name: "Liam", time: 35 },
-    { name: "You", time: elapsedTime || 42 }
-  ].sort((a, b) => a.time - b.time).slice(0, 5);
+  const row = document.createElement("div");
+  row.className = "leaderboard-item";
+  row.innerHTML = `
+    <span class="leaderboard-rank">-</span>
+    <span class="leaderboard-name">Leaderboard unavailable</span>
+    <span class="leaderboard-score">-</span>
+  `;
 
-  dummyLeaderboard.forEach((item, index) => {
-    const row = document.createElement("div");
-    row.className = "leaderboard-item";
-    row.innerHTML = `
-      <span class="leaderboard-rank">#${index + 1}</span>
-      <span class="leaderboard-name">${escapeHtml(item.name)}</span>
-      <span class="leaderboard-score">${formatElapsedTime(item.time)}</span>
-    `;
-
-    leaderboardList.appendChild(row);
-  });
+  leaderboardList.appendChild(row);
 }
 
 /* =========================
