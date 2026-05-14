@@ -1317,6 +1317,7 @@ function resetGameData() {
 
   topFiveInfo.classList.add("hidden");
   saveScoreBtn.classList.add("hidden");
+  shareBtn.disabled = false;
   renderLeaderboard([]);
 
   gameArea.innerHTML = "";
@@ -1394,6 +1395,7 @@ function endGame() {
   scoreSaved = false;
   topFiveInfo.classList.add("hidden");
   saveScoreBtn.classList.remove("hidden");
+  shareBtn.disabled = false;
   startPlayAgainCooldown();
 
   loadLeaderboard();
@@ -2043,6 +2045,7 @@ async function submitScore() {
     saveMessage.textContent = "Score saved successfully.";
     saveMessage.className = "save-message success";
     saveScoreBtn.classList.add("hidden");
+    shareBtn.disabled = false;
     topFiveInfo.textContent = "Score saved to leaderboard";
     topFiveInfo.classList.remove("hidden");
     await loadLeaderboard();
