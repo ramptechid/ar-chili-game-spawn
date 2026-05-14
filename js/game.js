@@ -109,20 +109,25 @@ const MIN_VISIBLE_CHILIES = 10;
 const VIEW_REFILL_COOLDOWN = 450;
 const OFFSCREEN_EXPIRE_MS = 900;
 const OFFSCREEN_MARGIN = 140;
-const XR_MAX_ACTIVE_OBJECTS = 16;
-const XR_INITIAL_OBJECTS = 8;
-const XR_SPAWN_DELAY_MIN = 1100;
-const XR_SPAWN_DELAY_MAX = 2300;
-const XR_LIFETIME_MIN = 18000;
-const XR_LIFETIME_MAX = 36000;
-const XR_SIZE_MIN = 0.14;
-const XR_SIZE_MAX = 0.2;
-const XR_DISTANCE_MIN = 2.1;
-const XR_DISTANCE_MAX = 4.2;
-const XR_HEIGHT_MIN = -0.35;
-const XR_HEIGHT_MAX = 0.45;
-const XR_MIN_OBJECT_SPACING = 0.82;
-const XR_SPAWN_ATTEMPTS = 14;
+const XR_MAX_ACTIVE_OBJECTS = 26;
+const XR_INITIAL_OBJECTS = 18;
+const XR_INITIAL_SPAWN_DELAY_MIN = 140;
+const XR_INITIAL_SPAWN_DELAY_MAX = 320;
+const XR_SPAWN_DELAY_MIN = 900;
+const XR_SPAWN_DELAY_MAX = 1700;
+const XR_LIFETIME_MIN = 30000;
+const XR_LIFETIME_MAX = 60000;
+const XR_SIZE_MIN = 0.16;
+const XR_SIZE_MAX = 0.23;
+const XR_DISTANCE_MIN = 2.4;
+const XR_DISTANCE_MAX = 5.2;
+const XR_HEIGHT_MIN = -0.4;
+const XR_HEIGHT_MAX = 0.55;
+const XR_MIN_OBJECT_SPACING = 0.68;
+const XR_SPAWN_ATTEMPTS = 24;
+const XR_TARGET_SPAWN_RATIO = 0.16;
+const XR_MIN_TARGET_OBJECTS = 2;
+const XR_MAX_TARGET_RATIO = 0.24;
 const XR_CATCH_ANIM_MS = 480;
 const XR_FADEIN_MS = 320;
 const XR_EXPIRE_MS = 520;
@@ -823,10 +828,10 @@ function runXRSpawner() {
     }, initialDelay);
     xrInitialSpawnTimeouts.push(timeoutId);
 
-    initialDelay += randomNumber(XR_SPAWN_DELAY_MIN, XR_SPAWN_DELAY_MAX);
+    initialDelay += randomNumber(XR_INITIAL_SPAWN_DELAY_MIN, XR_INITIAL_SPAWN_DELAY_MAX);
   }
 
-  scheduleNextXRSpawn(initialDelay + randomNumber(200, 600));
+  scheduleNextXRSpawn(initialDelay + randomNumber(600, 1100));
 }
 
 function scheduleNextXRSpawn(delay = randomNumber(XR_SPAWN_DELAY_MIN, XR_SPAWN_DELAY_MAX)) {
@@ -944,11 +949,24 @@ function getSpawnAssetXR() {
   const activeCount = getActiveXRObjectCount();
   const targetCount = xrObjects.filter((object) => object.isTarget && !object.caught && !object.catching && !object.expiring).length;
 
-  if (DECOY_ASSETS.length === 0 || shouldSpawnTargetAsset(activeCount, targetCount)) {
+  if (DECOY_ASSETS.length === 0 || shouldSpawnTargetAssetXR(activeCount, targetCount)) {
     return TARGET_ASSET;
   }
 
   return DECOY_ASSETS[randomNumber(0, DECOY_ASSETS.length - 1)];
+}
+
+function shouldSpawnTargetAssetXR(activeCount, targetCount) {
+  if (targetCount < XR_MIN_TARGET_OBJECTS) return true;
+
+  const maxTargetCount = Math.max(
+    XR_MIN_TARGET_OBJECTS + 1,
+    Math.ceil(activeCount * XR_MAX_TARGET_RATIO)
+  );
+
+  if (targetCount >= maxTargetCount) return false;
+
+  return Math.random() < XR_TARGET_SPAWN_RATIO;
 }
 
 function expireXRObjects(time) {
