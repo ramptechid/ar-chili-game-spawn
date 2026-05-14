@@ -94,21 +94,16 @@ const leaderboardList = document.getElementById("leaderboardList");
 
 const GAME_DURATION       = 60;
 const PLAY_AGAIN_COOLDOWN = 5;
-const SPAWN_SPEED         = 800;
 const CHILI_LIFETIME_MIN  = 5000;
 const CHILI_LIFETIME_MAX  = 9000;
-
-// How many chilies exist on-screen when no orientation sensor
-const CHILI_SCREEN_COUNT  = 6;
-// How many chilies exist in the full AR world when orientation is active
-const CHILI_WORLD_COUNT   = 10;
-// Virtual world search radius (in degrees) around starting orientation
-const WORLD_RANGE_H = 44;   // ±degrees horizontal
-const WORLD_RANGE_V = 26;   // ±degrees vertical
+const NEXT_CHILI_OVERLAP_MIN = 1200;
+const NEXT_CHILI_OVERLAP_MAX = 2200;
 
 // Pixels per 1° of phone rotation
 const PX_PER_DEG_H = window.innerWidth  / 28;
 const PX_PER_DEG_V = window.innerHeight / 36;
+const AIM_MOVE_LIMIT_X = window.innerWidth * 0.42;
+const AIM_MOVE_LIMIT_Y = window.innerHeight * 0.30;
 
 // Exponential smoothing factor for orientation (lower = smoother, less shake)
 const ORIENT_SMOOTH = 0.08;
@@ -124,6 +119,7 @@ let scoreSaved = false;
 
 let timerInterval = null;
 let spawnInterval = null;
+let spawnTimeouts = [];
 let playAgainCooldownInterval = null;
 
 let cameraStarted = false;
@@ -238,41 +234,31 @@ function startOrientationLoop() {
 function repositionChilies() {
   if (baseGamma === null) return;
 
-  const cx = window.innerWidth  / 2;
-  const cy = window.innerHeight / 2;
-
-  document.querySelectorAll(".chili").forEach((chili) => {
-    if (chili.dataset.caught === "true") return;
-    if (chili.dataset.wg === undefined) return; // screen-fixed, skip
-
-    const wg = parseFloat(chili.dataset.wg);
-    const wb = parseFloat(chili.dataset.wb);
-    const hs = parseFloat(chili.dataset.hs);
-
-    // Project world angle → screen pixel position (signs flipped: camera toward chili = chili to center)
-    // When the player turns toward the chili, this delta shrinks and the
-    // chili moves into the marker instead of sliding away from it.
-    chili.style.left = `${cx + (wg - smoothGamma) * PX_PER_DEG_H - hs}px`;
-    chili.style.top  = `${cy + (wb - smoothBeta)  * PX_PER_DEG_V - hs}px`;
-    updateChiliDepthStyle(chili, wg - smoothGamma, wb - smoothBeta);
-  });
-
+  updateAimMarker();
   autoCollectChiliByMarker();
 }
 
-function updateChiliDepthStyle(chili, deltaGamma, deltaBeta) {
-  const baseDepth = parseFloat(chili.dataset.depth || "1");
-  const angularDistance = Math.sqrt(deltaGamma * deltaGamma + deltaBeta * deltaBeta);
-  const centerFactor = clamp(1 - angularDistance / 18, 0, 1);
-  const visualDepth = baseDepth * (0.82 + centerFactor * 0.45);
-  const brightness = (0.74 + visualDepth * 0.24).toFixed(2);
-  const saturate = (0.78 + visualDepth * 0.28).toFixed(2);
-  const shadowY = Math.round(visualDepth * 14);
-  const shadowBlur = Math.round(visualDepth * 20);
-  const shadowAlpha = (0.16 + visualDepth * 0.42).toFixed(2);
+function updateAimMarker() {
+  const target = document.querySelector(".aim-area");
 
-  chili.style.scale = visualDepth.toFixed(3);
-  chili.style.filter = `brightness(${brightness}) saturate(${saturate}) drop-shadow(0 ${shadowY}px ${shadowBlur}px rgba(0,0,0,${shadowAlpha}))`;
+  if (!target || baseGamma === null || baseBeta === null) return;
+
+  const startX = window.innerWidth / 2;
+  const startY = window.innerHeight * 0.46;
+  const offsetX = clamp((smoothGamma - baseGamma) * PX_PER_DEG_H, -AIM_MOVE_LIMIT_X, AIM_MOVE_LIMIT_X);
+  const offsetY = clamp((smoothBeta - baseBeta) * PX_PER_DEG_V, -AIM_MOVE_LIMIT_Y, AIM_MOVE_LIMIT_Y);
+
+  target.style.left = `${startX + offsetX}px`;
+  target.style.top = `${startY + offsetY}px`;
+}
+
+function resetAimMarker() {
+  const target = document.querySelector(".aim-area");
+
+  if (!target) return;
+
+  target.style.left = "";
+  target.style.top = "";
 }
 
 /* =========================
@@ -367,9 +353,10 @@ function resetGameData() {
   saveScoreBtn.classList.remove("hidden");
 
   gameArea.innerHTML = "";
+  resetAimMarker();
 
   clearInterval(timerInterval);
-  clearInterval(spawnInterval);
+  clearSpawnTimers();
 }
 
 function runTimer() {
@@ -393,32 +380,32 @@ function runTimer() {
 }
 
 function runSpawner() {
+  clearSpawnTimers();
+  scheduleNextChili(600, true);
+}
+
+function scheduleNextChili(delay, nearView = false) {
+  spawnTimeouts.forEach((timeoutId) => {
+    clearTimeout(timeoutId);
+  });
+  spawnTimeouts = [];
+
+  const timeoutId = setTimeout(() => {
+    spawnTimeouts = spawnTimeouts.filter((id) => id !== timeoutId);
+    if (gameRunning) spawnChili(nearView);
+  }, delay);
+
+  spawnTimeouts.push(timeoutId);
+}
+
+function clearSpawnTimers() {
   clearInterval(spawnInterval);
+  spawnInterval = null;
 
-  // Wait 600ms for orientation sensor to initialise before first batch
-  setTimeout(() => {
-    if (!gameRunning) return;
-
-    const total     = baseGamma !== null ? CHILI_WORLD_COUNT : CHILI_SCREEN_COUNT;
-    const nearCount = baseGamma !== null ? 3 : total;
-
-    for (let i = 0; i < total; i++) {
-      const isNear = i < nearCount;
-      // Near chilies appear quickly, world chilies stagger across 0–5 s
-      const delay = isNear ? randomNumber(0, 800) : randomNumber(800, 5000);
-      setTimeout(() => {
-        if (gameRunning) spawnChili(isNear);
-      }, delay);
-    }
-  }, 600);
-
-  // Ongoing: replenish one chili at a time at random intervals
-  spawnInterval = setInterval(() => {
-    if (!gameRunning) return;
-    const target  = baseGamma !== null ? CHILI_WORLD_COUNT : CHILI_SCREEN_COUNT;
-    const current = document.querySelectorAll(".chili:not(.chili-expire)").length;
-    if (current < target) spawnChili(false);
-  }, randomNumber(700, 1600));
+  spawnTimeouts.forEach((timeoutId) => {
+    clearTimeout(timeoutId);
+  });
+  spawnTimeouts = [];
 }
 
 function endGame() {
@@ -427,9 +414,10 @@ function endGame() {
   gameRunning = false;
 
   clearInterval(timerInterval);
-  clearInterval(spawnInterval);
+  clearSpawnTimers();
 
   gameArea.innerHTML = "";
+  resetAimMarker();
   gameHud.classList.add("hidden");
 
   finalScoreText.textContent = score;
@@ -455,9 +443,10 @@ function resetToIntro() {
   clearPlayAgainCooldown();
 
   clearInterval(timerInterval);
-  clearInterval(spawnInterval);
+  clearSpawnTimers();
 
   gameArea.innerHTML = "";
+  resetAimMarker();
 
   stopOrientationTracking();
   stopCamera();
@@ -532,34 +521,15 @@ function spawnChili(nearView = false) {
   chili.dataset.hs     = hs;
   chili.dataset.depth  = depth.toFixed(3);
 
-  if (baseGamma !== null) {
-    // AR mode: world angle coordinates
-    const rangeH = nearView ? 11 : WORLD_RANGE_H;
-    const rangeV = nearView ? 7  : WORLD_RANGE_V;
+  const topLimit    = 160;
+  const bottomLimit = window.innerHeight - 200;
+  const leftLimit   = 20;
+  const rightLimit  = window.innerWidth - size - 20;
 
-    const wg = (nearView ? smoothGamma : baseGamma) + randF(-rangeH, rangeH);
-    const wb = (nearView ? smoothBeta  : baseBeta)  + randF(-rangeV, rangeV);
+  if (bottomLimit <= topLimit || rightLimit <= leftLimit) return;
 
-    chili.dataset.wg = wg;
-    chili.dataset.wb = wb;
-
-    const cx = window.innerWidth  / 2;
-    const cy = window.innerHeight / 2;
-    chili.style.left = `${cx + (wg - smoothGamma) * PX_PER_DEG_H - hs}px`;
-    chili.style.top  = `${cy + (wb - smoothBeta)  * PX_PER_DEG_V - hs}px`;
-    updateChiliDepthStyle(chili, wg - smoothGamma, wb - smoothBeta);
-  } else {
-    // Screen fallback (no gyroscope)
-    const topLimit    = 160;
-    const bottomLimit = window.innerHeight - 200;
-    const leftLimit   = 20;
-    const rightLimit  = window.innerWidth - size - 20;
-
-    if (bottomLimit <= topLimit || rightLimit <= leftLimit) return;
-
-    chili.style.left = `${randomNumber(leftLimit, rightLimit)}px`;
-    chili.style.top  = `${randomNumber(topLimit,  bottomLimit)}px`;
-  }
+  chili.style.left = `${randomNumber(leftLimit, rightLimit)}px`;
+  chili.style.top  = `${randomNumber(topLimit,  bottomLimit)}px`;
 
   chili.addEventListener("pointerdown", (e) => {
     e.stopPropagation();
@@ -583,6 +553,9 @@ function spawnChili(nearView = false) {
   }, 300);
 
   const duration = randomNumber(CHILI_LIFETIME_MIN, CHILI_LIFETIME_MAX);
+  const overlap = randomNumber(NEXT_CHILI_OVERLAP_MIN, NEXT_CHILI_OVERLAP_MAX);
+  scheduleNextChili(Math.max(900, duration - overlap), false);
+
   setTimeout(() => {
     if (chili.parentElement && chili.dataset.caught !== "true") {
       expireChili(chili);
@@ -683,6 +656,8 @@ function collectChili(chili, x, y) {
 
   createHitEffect(x, y);
   createPlusOne(x, y);
+
+  scheduleNextChili(randomNumber(350, 850), false);
 
   chili.classList.add("chili-caught");
   setTimeout(() => {
