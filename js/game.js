@@ -109,18 +109,20 @@ const MIN_VISIBLE_CHILIES = 10;
 const VIEW_REFILL_COOLDOWN = 450;
 const OFFSCREEN_EXPIRE_MS = 900;
 const OFFSCREEN_MARGIN = 140;
-const XR_MAX_ACTIVE_OBJECTS = 24;
-const XR_INITIAL_OBJECTS = 6;
-const XR_SPAWN_DELAY_MIN = 650;
-const XR_SPAWN_DELAY_MAX = 1500;
-const XR_LIFETIME_MIN = 8500;
-const XR_LIFETIME_MAX = 22000;
-const XR_SIZE_MIN = 0.32;
-const XR_SIZE_MAX = 0.32;
-const XR_DISTANCE_MIN = 1;
-const XR_DISTANCE_MAX = 1.5;
-const XR_HEIGHT_MIN = -0.45;
-const XR_HEIGHT_MAX = 0.65;
+const XR_MAX_ACTIVE_OBJECTS = 16;
+const XR_INITIAL_OBJECTS = 8;
+const XR_SPAWN_DELAY_MIN = 1100;
+const XR_SPAWN_DELAY_MAX = 2300;
+const XR_LIFETIME_MIN = 18000;
+const XR_LIFETIME_MAX = 36000;
+const XR_SIZE_MIN = 0.14;
+const XR_SIZE_MAX = 0.2;
+const XR_DISTANCE_MIN = 2.1;
+const XR_DISTANCE_MAX = 4.2;
+const XR_HEIGHT_MIN = -0.35;
+const XR_HEIGHT_MAX = 0.45;
+const XR_MIN_OBJECT_SPACING = 0.82;
+const XR_SPAWN_ATTEMPTS = 14;
 const XR_CATCH_ANIM_MS = 480;
 const XR_FADEIN_MS = 320;
 const XR_EXPIRE_MS = 520;
@@ -850,43 +852,18 @@ function spawnXRObject(nearView = false) {
   const cameraMatrix = xrLastPose.transform.matrix;
   const cameraPosition = [cameraMatrix[12], cameraMatrix[13], cameraMatrix[14]];
 
-  // Horizontal camera forward (ignore tilt/pitch)
-  const fwdX = -cameraMatrix[8];
-  const fwdZ = -cameraMatrix[10];
-  const fwdLen = Math.sqrt(fwdX * fwdX + fwdZ * fwdZ);
-  const nfX = fwdLen > 0.001 ? fwdX / fwdLen : 0;
-  const nfZ = fwdLen > 0.001 ? fwdZ / fwdLen : -1;
-  const nrX = nfZ;
-  const nrZ = -nfX;
-
-  // Near = front 180° arc, full = 360° around player
-  const angle = nearView
-    ? randF(-Math.PI / 2, Math.PI / 2)
-    : randF(0, Math.PI * 2);
-  const ca = Math.cos(angle);
-  const sa = Math.sin(angle);
-  const dirX = nfX * ca + nrX * sa;
-  const dirZ = nfZ * ca + nrZ * sa;
-
-  const distance = randF(XR_DISTANCE_MIN, XR_DISTANCE_MAX);
-
-  const heightOffset = randF(XR_HEIGHT_MIN, XR_HEIGHT_MAX);
+  const spawnPose = getXRSpawnPose(cameraMatrix, cameraPosition, nearView);
+  if (!spawnPose) return;
 
   const size = randF(XR_SIZE_MIN, XR_SIZE_MAX);
   const now = performance.now();
-  const anchoredPosition = Object.freeze([
-    cameraPosition[0] + dirX * distance,
-    cameraPosition[1] + heightOffset,
-    cameraPosition[2] + dirZ * distance
-  ]);
-
   // Position is fully anchored in world space after spawn.
   xrObjects.push({
     asset,
     isTarget: !!asset.isTarget,
-    position: anchoredPosition,
+    position: Object.freeze(spawnPose.position),
     size,
-    yaw: Math.atan2(-dirX, -dirZ),
+    yaw: spawnPose.yaw,
     createdAt: now,
     lifetime: randomNumber(XR_LIFETIME_MIN, XR_LIFETIME_MAX),
     caught: false,
@@ -895,6 +872,72 @@ function spawnXRObject(nearView = false) {
     fadeIn: true,
     fadeInStart: now
   });
+}
+
+function getXRSpawnPose(cameraMatrix, cameraPosition, nearView = false) {
+  const forward = getHorizontalCameraForward(cameraMatrix);
+  const right = [forward[1], -forward[0]];
+  let bestPose = null;
+  let bestSpacing = -Infinity;
+
+  for (let i = 0; i < XR_SPAWN_ATTEMPTS; i++) {
+    const localAngle = nearView
+      ? randF(-Math.PI / 2.6, Math.PI / 2.6)
+      : randF(0, Math.PI * 2);
+    const distance = randF(XR_DISTANCE_MIN, XR_DISTANCE_MAX);
+    const direction = [
+      forward[0] * Math.cos(localAngle) + right[0] * Math.sin(localAngle),
+      forward[1] * Math.cos(localAngle) + right[1] * Math.sin(localAngle)
+    ];
+    const position = [
+      cameraPosition[0] + direction[0] * distance,
+      cameraPosition[1] + randF(XR_HEIGHT_MIN, XR_HEIGHT_MAX),
+      cameraPosition[2] + direction[1] * distance
+    ];
+    const spacing = getNearestXRObjectDistance(position);
+
+    if (spacing >= XR_MIN_OBJECT_SPACING) {
+      return {
+        position,
+        yaw: Math.atan2(-direction[0], -direction[1])
+      };
+    }
+
+    if (spacing > bestSpacing) {
+      bestSpacing = spacing;
+      bestPose = {
+        position,
+        yaw: Math.atan2(-direction[0], -direction[1])
+      };
+    }
+  }
+
+  return bestSpacing > XR_MIN_OBJECT_SPACING * 0.62 ? bestPose : null;
+}
+
+function getHorizontalCameraForward(cameraMatrix) {
+  const fwdX = -cameraMatrix[8];
+  const fwdZ = -cameraMatrix[10];
+  const fwdLen = Math.sqrt(fwdX * fwdX + fwdZ * fwdZ);
+
+  if (fwdLen <= 0.001) {
+    return [0, -1];
+  }
+
+  return [fwdX / fwdLen, fwdZ / fwdLen];
+}
+
+function getNearestXRObjectDistance(position) {
+  const activeObjects = xrObjects.filter((object) => !object.caught && !object.catching && !object.expiring);
+
+  if (activeObjects.length === 0) return Infinity;
+
+  return activeObjects.reduce((nearest, object) => {
+    const dx = object.position[0] - position[0];
+    const dy = object.position[1] - position[1];
+    const dz = object.position[2] - position[2];
+    return Math.min(nearest, Math.sqrt(dx * dx + dy * dy + dz * dz));
+  }, Infinity);
 }
 
 function getSpawnAssetXR() {
