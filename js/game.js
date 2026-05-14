@@ -98,12 +98,12 @@ const CHILI_LIFETIME_MIN  = 5000;
 const CHILI_LIFETIME_MAX  = 9000;
 const NEXT_CHILI_OVERLAP_MIN = 1200;
 const NEXT_CHILI_OVERLAP_MAX = 2200;
+const WORLD_RANGE_H = 44;
+const WORLD_RANGE_V = 26;
 
 // Pixels per 1° of phone rotation
 const PX_PER_DEG_H = window.innerWidth  / 28;
 const PX_PER_DEG_V = window.innerHeight / 36;
-const AIM_MOVE_LIMIT_X = window.innerWidth * 0.42;
-const AIM_MOVE_LIMIT_Y = window.innerHeight * 0.30;
 
 // Exponential smoothing factor for orientation (lower = smoother, less shake)
 const ORIENT_SMOOTH = 0.08;
@@ -234,22 +234,24 @@ function startOrientationLoop() {
 function repositionChilies() {
   if (baseGamma === null) return;
 
-  updateAimMarker();
-  autoCollectChiliByMarker();
+  document.querySelectorAll(".chili").forEach((chili) => {
+    if (chili.dataset.caught === "true") return;
+    if (chili.dataset.wg === undefined) return;
+
+    projectWorldChili(chili);
+  });
 }
 
-function updateAimMarker() {
-  const target = document.querySelector(".aim-area");
+function projectWorldChili(chili) {
+  const cx = window.innerWidth / 2;
+  const cy = window.innerHeight / 2;
 
-  if (!target || baseGamma === null || baseBeta === null) return;
+  const wg = parseFloat(chili.dataset.wg);
+  const wb = parseFloat(chili.dataset.wb);
+  const hs = parseFloat(chili.dataset.hs);
 
-  const startX = window.innerWidth / 2;
-  const startY = window.innerHeight * 0.46;
-  const offsetX = clamp((smoothGamma - baseGamma) * PX_PER_DEG_H, -AIM_MOVE_LIMIT_X, AIM_MOVE_LIMIT_X);
-  const offsetY = clamp((smoothBeta - baseBeta) * PX_PER_DEG_V, -AIM_MOVE_LIMIT_Y, AIM_MOVE_LIMIT_Y);
-
-  target.style.left = `${startX + offsetX}px`;
-  target.style.top = `${startY + offsetY}px`;
+  chili.style.left = `${cx + (wg - smoothGamma) * PX_PER_DEG_H - hs}px`;
+  chili.style.top = `${cy + (wb - smoothBeta) * PX_PER_DEG_V - hs}px`;
 }
 
 function resetAimMarker() {
@@ -323,7 +325,7 @@ async function startGame() {
   const cameraReady = await startCamera();
   if (!cameraReady) return;
 
-  startOrientationTracking();
+  await startOrientationTracking();
   resetGameData();
 
   document.body.classList.remove("intro-mode");
@@ -505,6 +507,11 @@ function clearPlayAgainCooldown() {
 ========================= */
 
 function spawnChili(nearView = false) {
+  if (orientationActive && baseGamma === null) {
+    scheduleNextChili(250, nearView);
+    return;
+  }
+
   const size  = randomNumber(60, 92);
   const hs    = size / 2;
   // depth: 0.45 = far/small/dark, 1.2 = near/big/bright
@@ -521,21 +528,29 @@ function spawnChili(nearView = false) {
   chili.dataset.hs     = hs;
   chili.dataset.depth  = depth.toFixed(3);
 
-  const topLimit    = 160;
-  const bottomLimit = window.innerHeight - 200;
-  const leftLimit   = 20;
-  const rightLimit  = window.innerWidth - size - 20;
+  if (baseGamma !== null) {
+    const rangeH = nearView ? 10 : WORLD_RANGE_H;
+    const rangeV = nearView ? 7 : WORLD_RANGE_V;
+    const centerGamma = nearView ? smoothGamma : baseGamma;
+    const centerBeta = nearView ? smoothBeta : baseBeta;
 
-  if (bottomLimit <= topLimit || rightLimit <= leftLimit) return;
+    chili.dataset.wg = centerGamma + randF(-rangeH, rangeH);
+    chili.dataset.wb = centerBeta + randF(-rangeV, rangeV);
+    projectWorldChili(chili);
+  } else {
+    const topLimit    = 160;
+    const bottomLimit = window.innerHeight - 200;
+    const leftLimit   = 20;
+    const rightLimit  = window.innerWidth - size - 20;
 
-  chili.style.left = `${randomNumber(leftLimit, rightLimit)}px`;
-  chili.style.top  = `${randomNumber(topLimit,  bottomLimit)}px`;
+    if (bottomLimit <= topLimit || rightLimit <= leftLimit) return;
+
+    chili.style.left = `${randomNumber(leftLimit, rightLimit)}px`;
+    chili.style.top  = `${randomNumber(topLimit,  bottomLimit)}px`;
+  }
 
   chili.addEventListener("pointerdown", (e) => {
     e.stopPropagation();
-    if (!gameRunning || chili.dataset.caught === "true") return;
-    const rect = chili.getBoundingClientRect();
-    collectChili(chili, rect.left, rect.top);
   });
 
   gameArea.appendChild(chili);
@@ -583,16 +598,6 @@ function catchChiliByMarker() {
     collectChili(targetHit.chili, targetHit.x, targetHit.y);
   } else {
     showMissEffect();
-  }
-}
-
-function autoCollectChiliByMarker() {
-  if (!gameRunning) return;
-
-  const targetHit = findChiliInMarker();
-
-  if (targetHit) {
-    collectChili(targetHit.chili, targetHit.x, targetHit.y);
   }
 }
 

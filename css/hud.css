@@ -65,7 +65,7 @@
 .aim-area {
   position: fixed;
   left: 50%;
-  top: 46%;
+  top: 50%;
   width: clamp(132px, 34vmin, 210px);
   height: clamp(132px, 34vmin, 210px);
   transform: translate(-50%, -50%);
@@ -573,7 +573,7 @@
   }
 
   .aim-area {
-    top: 48%;
+    top: 50%;
   }
 }
 
