@@ -93,7 +93,7 @@ const leaderboardList = document.getElementById("leaderboardList");
    GAME CONFIG
 ========================= */
 
-const TARGET_SCORE        = 10;
+const TARGET_SCORE        = 5;
 const PLAY_AGAIN_COOLDOWN = 5;
 const WEBXR_ONLY_MODE = true;
 const CHILI_LIFETIME_MIN  = 3600;
@@ -2086,7 +2086,7 @@ async function shareScoreImage() {
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({
         title: "Green Chili Hunt Score",
-        text: `I collected 10 green chilies in ${resultTime}!`,
+        text: `I collected ${TARGET_SCORE} green chilies in ${resultTime}!`,
         files: [file]
       });
 
@@ -2096,7 +2096,7 @@ async function shareScoreImage() {
     if (navigator.share) {
       await navigator.share({
         title: "Green Chili Hunt Score",
-        text: `I collected 10 green chilies in ${resultTime}!`
+        text: `I collected ${TARGET_SCORE} green chilies in ${resultTime}!`
       });
 
       return;
@@ -2163,7 +2163,7 @@ function createScoreImageBlob(scoreValue) {
 
     ctx.font = "400 44px Arial";
     ctx.fillStyle = "rgba(255, 255, 255, 0.78)";
-    ctx.fillText("Time to collect 10 chilies", 540, 545);
+    ctx.fillText(`Time to collect ${TARGET_SCORE} chilies`, 540, 545);
 
     ctx.font = "900 230px Arial";
     ctx.fillStyle = "#ffffff";
