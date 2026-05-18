@@ -2,14 +2,11 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-
   <meta
     name="viewport"
     content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover"
   />
-
   <title>Green Chili Hunt</title>
-
   <link rel="stylesheet" href="css/main.css" />
   <link rel="stylesheet" href="css/hud.css" />
 </head>
@@ -29,16 +26,15 @@
 
   <!-- IN-GAME HUD -->
   <div id="gameHud" class="game-hud hidden">
-
     <div class="top-hud">
       <div class="hud-card">
         <span class="hud-label">SCORE</span>
         <span id="scoreText" class="hud-value">0</span>
       </div>
 
-      <div class="timer-card">
-        <span class="hud-label">TIME</span>
-        <span id="timerText" class="timer-value">0</span>
+      <div class="timer-card" style="background:#2D7A2D; color:#fff;">
+        <span class="hud-label" style="color:#fff;">TIME</span>
+        <span id="timerText" class="timer-value">0s</span>
       </div>
     </div>
 
@@ -50,19 +46,16 @@
     </div>
 
     <div class="bottom-hud">
-      <div class="hint-box">
-        Arahkan bidikan ke cabe hijau, lalu ucapkan "ijo"!
+      <div class="hint-box" style="background: rgba(0,0,0,0.6); border-radius: 999px; padding: 12px 24px; border: none; color: #fff; font-weight: normal; font-size: 14px;">
+        Arahkan bidikan ke cabe hijau, lalu ucapkan "ijo" atau teriak kencang!
       </div>
-
       <button id="catchBtn" class="catch-btn hidden" aria-hidden="true" tabindex="-1"></button>
     </div>
-
   </div>
 
   <!-- INTRO SCREEN -->
   <section id="introScreen" class="screen active">
     <div class="intro-card">
-
       <div class="logo-badge">
         <img
           src="assets/images/chili-green.png"
@@ -81,7 +74,6 @@
 
       <div class="how-to-box">
         <h3>Cara Bermain</h3>
-
         <ul>
           <li>Gunakan Chrome di Android yang mendukung ARCore.</li>
           <li>Izinkan akses AR camera dan mikrofon.</li>
@@ -103,7 +95,6 @@
   <!-- RESULT SCREEN -->
   <section id="resultScreen" class="screen">
     <div class="result-card">
-
       <div class="logo-badge">
         <img
           src="assets/images/chili-green.png"
@@ -113,10 +104,8 @@
       </div>
 
       <h1>Challenge Complete!</h1>
-
       <p class="result-label">Time to collect 5 chilies</p>
-
-      <div id="finalScoreText" class="final-score">0</div>
+      <div id="finalScoreText" class="final-score" style="padding: 20px 0;">0s</div>
 
       <div id="topFiveInfo" class="top-five-info hidden">
         Score saved to leaderboard
@@ -138,7 +127,6 @@
       <button id="playAgainBtn" class="primary-btn">
         Play Again
       </button>
-
     </div>
   </section>
 
@@ -161,7 +149,7 @@
       <h2>Save Your Score</h2>
 
       <p class="modal-score-label">Your Score</p>
-      <div id="modalScoreText" class="modal-score-value">0</div>
+      <div id="modalScoreText" class="modal-score-value">0s</div>
 
       <label class="name-label" for="playerNameInput">
         Your Name

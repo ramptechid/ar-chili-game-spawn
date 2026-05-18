@@ -109,6 +109,8 @@ const MIN_VISIBLE_CHILIES = 10;
 const VIEW_REFILL_COOLDOWN = 450;
 const OFFSCREEN_EXPIRE_MS = 900;
 const OFFSCREEN_MARGIN = 140;
+
+// XR Configurations updated for larger uniform sizing
 const XR_MAX_ACTIVE_OBJECTS = 26;
 const XR_INITIAL_OBJECTS = 18;
 const XR_INITIAL_SPAWN_DELAY_MIN = 140;
@@ -117,8 +119,8 @@ const XR_SPAWN_DELAY_MIN = 900;
 const XR_SPAWN_DELAY_MAX = 1700;
 const XR_LIFETIME_MIN = Infinity;
 const XR_LIFETIME_MAX = Infinity;
-const XR_SIZE_MIN = 0.34;
-const XR_SIZE_MAX = 0.48;
+const XR_SIZE_MIN = 1.5; // Ditingkatkan agar objek sangat besar
+const XR_SIZE_MAX = 2.0; // Ditingkatkan agar objek sangat besar
 const XR_DISTANCE_MIN = 2.4;
 const XR_DISTANCE_MAX = 5.2;
 const XR_HEIGHT_MIN = -0.4;
@@ -133,13 +135,10 @@ const XR_FADEIN_MS = 320;
 const XR_EXPIRE_MS = 520;
 const XR_EXPIRE_STAGGER_MIN = 520;
 const XR_EXPIRE_STAGGER_MAX = 1250;
-const XR_NORMALIZED_MODEL_SIZE = 3.0;
-const XR_HOVER_SCALE = 1.2;
-const XR_HOVER_RADIUS = 0.24;
-const XR_HOVER_SMOOTHING = 0.12;
-const XR_MATERIAL_EXPOSURE = 1.45;
-const XR_MATERIAL_MIN_COLOR = 0.36;
+const XR_MATERIAL_EXPOSURE = 2.0; // Intensitas warna jauh lebih cerah
+const XR_MATERIAL_MIN_COLOR = 0.5; // Mencegah warna kusam
 const XR_MATERIAL_BLACK_FLOOR = 0.06;
+
 const CHILI_SIZE_MIN = 34;
 const CHILI_SIZE_MAX = 82;
 const WORLD_RANGE_H = 24;
@@ -149,8 +148,10 @@ const DEPTH_MIN = 0.58;
 const DEPTH_MAX = 1.1;
 const TARGET_SPAWN_RATIO = 0.2;
 const MIN_TARGET_CHILIES = 1;
+
+// Voice/Shout Catch limits
 const VOICE_CATCH_COOLDOWN_MS = 850;
-const SHOUT_RMS_THRESHOLD = 0.18;
+const SHOUT_RMS_THRESHOLD = 0.18; // Threshold level suara teriak
 
 const TARGET_ASSET = {
   src: "assets/images/chili-green.png",
@@ -268,6 +269,7 @@ let xrSpawnInterval = null;
 let xrSpawnTimeout = null;
 let xrInitialSpawnTimeouts = [];
 let nextXRExpireAt = 0;
+
 let voiceActive = false;
 let voiceStream = null;
 let voiceRecognition = null;
@@ -310,7 +312,6 @@ async function startOrientationTracking() {
   if (WEBXR_ONLY_MODE) return false;
   if (orientationActive) return;
 
-  // iOS 13+ requires explicit permission
   if (
     typeof DeviceOrientationEvent !== "undefined" &&
     typeof DeviceOrientationEvent.requestPermission === "function"
@@ -348,7 +349,6 @@ function handleOrientation(event) {
   const beta  = event.beta  ?? 0;
 
   if (baseGamma === null) {
-    // First reading — set baseline and seed smoother at this value
     baseGamma   = gamma;
     baseBeta    = beta;
     smoothGamma = gamma;
@@ -372,7 +372,6 @@ function startOrientationLoop() {
       return;
     }
 
-    // Exponential moving average — smooths out sensor noise
     smoothGamma = smoothAngle(smoothGamma, rawGamma);
     smoothBeta  = smoothAngle(smoothBeta, rawBeta);
 
@@ -482,15 +481,9 @@ async function startCamera() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: {
-        facingMode: {
-          ideal: "environment"
-        },
-        width: {
-          ideal: 1280
-        },
-        height: {
-          ideal: 720
-        }
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
       },
       audio: false
     });
@@ -514,9 +507,7 @@ async function startCamera() {
 
 function stopCamera() {
   if (cameraStream) {
-    cameraStream.getTracks().forEach((track) => {
-      track.stop();
-    });
+    cameraStream.getTracks().forEach((track) => track.stop());
   }
 
   cameraStream = null;
@@ -550,9 +541,7 @@ async function startXRSession() {
 
     xrSession = await navigator.xr.requestSession("immersive-ar", {
       optionalFeatures: ["dom-overlay", "local-floor"],
-      domOverlay: {
-        root: document.body
-      }
+      domOverlay: { root: document.body }
     });
 
     await xrGl.makeXRCompatible();
@@ -603,16 +592,14 @@ function setupXRRenderer() {
 
     void main() {
       vec3 normal = normalize(mat3(u_model) * a_normal);
-      vec3 keyLight = normalize(vec3(0.35, 0.9, 0.45));
-      vec3 fillLight = normalize(vec3(-0.55, 0.45, -0.25));
-      float ambientLight = 1.15;
-      float directionalLight = max(dot(normal, keyLight), 0.0) * 0.58;
-      float cityFillLight = max(dot(normal, fillLight), 0.0) * 0.24;
-      v_light = ambientLight + directionalLight + cityFillLight;
+      vec3 lightDir = normalize(vec3(0.35, 0.8, 0.45));
+      // Pencahayaan ditingkatkan untuk visual warna yang lebih kuat/terang
+      v_light = 1.2 + max(dot(normal, lightDir), 0.0) * 0.8;
       v_color = a_color;
       gl_Position = u_matrix * vec4(a_position, 1.0);
     }
   `);
+
   const fragmentShader = createXRShader(xrGl.FRAGMENT_SHADER, `
     precision mediump float;
     uniform vec4 u_color;
@@ -622,9 +609,8 @@ function setupXRRenderer() {
 
     void main() {
       vec4 color = u_color * v_color;
-      vec3 cityEnvironment = vec3(0.08, 0.1, 0.14);
-      vec3 litColor = color.rgb * v_light + cityEnvironment * 0.18;
-      vec3 displayColor = pow(clamp(litColor, 0.0, 1.0), vec3(1.0 / 2.2));
+      // Exposure logic
+      vec3 displayColor = pow(clamp(color.rgb * v_light, 0.0, 1.0), vec3(1.0 / 2.2));
       gl_FragColor = vec4(displayColor, color.a * u_alpha);
     }
   `);
@@ -656,9 +642,7 @@ async function loadXRModel(src) {
   if (xrModels.has(src)) return xrModels.get(src);
 
   const response = await fetch(src);
-  if (!response.ok) {
-    throw new Error(`Unable to load 3D model: ${src}`);
-  }
+  if (!response.ok) throw new Error(`Unable to load 3D model: ${src}`);
 
   const model = createXRModelFromGlb(await response.arrayBuffer());
   xrModels.set(src, model);
@@ -668,9 +652,7 @@ async function loadXRModel(src) {
 function createXRModelFromGlb(arrayBuffer) {
   const dataView = new DataView(arrayBuffer);
   const magic = dataView.getUint32(0, true);
-  if (magic !== 0x46546c67) {
-    throw new Error("Invalid GLB file.");
-  }
+  if (magic !== 0x46546c67) throw new Error("Invalid GLB file.");
 
   let offset = 12;
   let json = null;
@@ -691,14 +673,9 @@ function createXRModelFromGlb(arrayBuffer) {
     offset = chunkStart + chunkLength;
   }
 
-  if (!json || !bin) {
-    throw new Error("GLB is missing JSON or binary data.");
-  }
+  if (!json || !bin) throw new Error("GLB is missing JSON or binary data.");
 
-  const materials = (json.materials || []).map((material) => {
-    return getXRMaterialColor(material);
-  });
-
+  const materials = (json.materials || []).map((material) => getXRMaterialColor(material));
   const primitives = [];
   const parsedPrimitives = [];
 
@@ -715,13 +692,7 @@ function createXRModelFromGlb(arrayBuffer) {
         ? readGlbAccessor(json, bin, primitive.indices)
         : null;
 
-      parsedPrimitives.push({
-        positions,
-        normals,
-        colors,
-        indices,
-        material: primitive.material
-      });
+      parsedPrimitives.push({ positions, normals, colors, indices, material: primitive.material });
     });
   });
 
@@ -729,6 +700,8 @@ function createXRModelFromGlb(arrayBuffer) {
 
   parsedPrimitives.forEach((primitive) => {
     const positions = normalizeXRPositions(primitive.positions, bounds);
+    
+    // WebGL Buffers
     const positionBuffer = xrGl.createBuffer();
     xrGl.bindBuffer(xrGl.ARRAY_BUFFER, positionBuffer);
     xrGl.bufferData(xrGl.ARRAY_BUFFER, positions, xrGl.STATIC_DRAW);
@@ -770,21 +743,12 @@ function createXRModelFromGlb(arrayBuffer) {
 
 function getXRMaterialColor(material) {
   const factor = material?.pbrMetallicRoughness?.baseColorFactor || [1, 1, 1, 1];
-  const color = [
-    factor[0] ?? 1,
-    factor[1] ?? 1,
-    factor[2] ?? 1
-  ].map((channel) => clamp(channel * XR_MATERIAL_EXPOSURE, 0, 1));
+  const color = [ factor[0] ?? 1, factor[1] ?? 1, factor[2] ?? 1 ].map((channel) => clamp(channel * XR_MATERIAL_EXPOSURE, 0, 1));
   const alpha = factor[3] ?? 1;
   const maxChannel = Math.max(color[0], color[1], color[2]);
 
   if (maxChannel <= 0.001) {
-    return new Float32Array([
-      XR_MATERIAL_BLACK_FLOOR,
-      XR_MATERIAL_BLACK_FLOOR,
-      XR_MATERIAL_BLACK_FLOOR,
-      alpha
-    ]);
+    return new Float32Array([ XR_MATERIAL_BLACK_FLOOR, XR_MATERIAL_BLACK_FLOOR, XR_MATERIAL_BLACK_FLOOR, alpha ]);
   }
 
   if (maxChannel < XR_MATERIAL_MIN_COLOR) {
@@ -812,32 +776,23 @@ function getXRModelBounds(primitives) {
     }
   });
 
-  const size = [
-    max[0] - min[0],
-    max[1] - min[1],
-    max[2] - min[2]
-  ];
+  const size = [ max[0] - min[0], max[1] - min[1], max[2] - min[2] ];
   const longestSide = Math.max(size[0], size[1], size[2], 0.0001);
 
   return {
-    center: [
-      (min[0] + max[0]) / 2,
-      (min[1] + max[1]) / 2,
-      (min[2] + max[2]) / 2
-    ],
-    scale: XR_NORMALIZED_MODEL_SIZE / longestSide
+    center: [ (min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2 ],
+    // Menyebarkan semua objek menjadi ukuran seragam dengan ratio bounds masing-masing
+    scale: 1 / longestSide 
   };
 }
 
 function normalizeXRPositions(positions, bounds) {
   const normalized = new Float32Array(positions.length);
-
   for (let i = 0; i < positions.length; i += 3) {
-    normalized[i] = (positions[i] - bounds.center[0]) * bounds.scale;
-    normalized[i + 1] = (positions[i + 1] - bounds.center[1]) * bounds.scale;
-    normalized[i + 2] = (positions[i + 2] - bounds.center[2]) * bounds.scale;
+    normalized[i]   = (positions[i] - bounds.center[0]) * bounds.scale;
+    normalized[i+1] = (positions[i+1] - bounds.center[1]) * bounds.scale;
+    normalized[i+2] = (positions[i+2] - bounds.center[2]) * bounds.scale;
   }
-
   return normalized;
 }
 
@@ -883,7 +838,7 @@ function getGlbAccessorComponentCount(type) {
     case "VEC2": return 2;
     case "VEC3": return 3;
     case "VEC4": return 4;
-    default: throw new Error(`Unsupported GLB accessor type: ${type}`);
+    default: throw new Error(`Unsupported GLB type: ${type}`);
   }
 }
 
@@ -901,7 +856,6 @@ function getGlbAccessorArrayType(componentType) {
 
 function onXRFrame(time, frame) {
   if (!xrSession || !xrRefSpace) return;
-
   xrSession.requestAnimationFrame(onXRFrame);
 
   const pose = frame.getViewerPose(xrRefSpace);
@@ -919,7 +873,6 @@ function onXRFrame(time, frame) {
   xrLastViewProjection = multiplyMat4(view.projectionMatrix, view.transform.inverse.matrix);
 
   expireXRObjects(time);
-  updateXRHoverStates();
 
   for (const xrView of pose.views) {
     const viewport = layer.getViewport(xrView);
@@ -946,21 +899,17 @@ function renderXRObjects(view) {
     if (object.caught) return;
 
     let alpha = 1;
-    object.hoverScale = object.hoverScale || 1;
-    let scale = object.hoverScale;
+    let scale = 1;
 
     if (object.catching) {
       const t = clamp((now - object.catchStartAt) / XR_CATCH_ANIM_MS, 0, 1);
       alpha = 1 - t;
-      scale = object.hoverScale;
     } else if (object.expiring) {
       const t = clamp((now - object.expireStartedAt) / XR_EXPIRE_MS, 0, 1);
       alpha = 1 - t;
-      scale = object.hoverScale;
     } else if (object.fadeIn) {
       const t = clamp((now - object.fadeInStart) / XR_FADEIN_MS, 0, 1);
       alpha = t;
-      scale = object.hoverScale;
       if (t >= 1) object.fadeIn = false;
     }
 
@@ -987,14 +936,7 @@ function renderXRObjects(view) {
       if (primitive.colorBuffer) {
         xrGl.bindBuffer(xrGl.ARRAY_BUFFER, primitive.colorBuffer);
         xrGl.enableVertexAttribArray(vertexColorLocation);
-        xrGl.vertexAttribPointer(
-          vertexColorLocation,
-          primitive.colorComponentCount,
-          primitive.colorComponentType,
-          primitive.colorNormalized,
-          0,
-          0
-        );
+        xrGl.vertexAttribPointer(vertexColorLocation, primitive.colorComponentCount, primitive.colorComponentType, primitive.colorNormalized, 0, 0);
       } else {
         xrGl.disableVertexAttribArray(vertexColorLocation);
         xrGl.vertexAttrib4f(vertexColorLocation, 1, 1, 1, 1);
@@ -1063,12 +1005,12 @@ function spawnXRObject(nearView = false) {
 
   const size = randF(XR_SIZE_MIN, XR_SIZE_MAX);
   const now = performance.now();
-  // Position is fully anchored in world space after spawn.
+  
   xrObjects.push({
     asset,
     isTarget: !!asset.isTarget,
     position: Object.freeze(spawnPose.position),
-    size,
+    size, // size yg telah ditingkatkan agar semua benda super besar
     yaw: spawnPose.yaw,
     createdAt: now,
     lifetime: XR_LIFETIME_MIN,
@@ -1087,9 +1029,7 @@ function getXRSpawnPose(cameraMatrix, cameraPosition, nearView = false) {
   let bestSpacing = -Infinity;
 
   for (let i = 0; i < XR_SPAWN_ATTEMPTS; i++) {
-    const localAngle = nearView
-      ? randF(-Math.PI / 2.6, Math.PI / 2.6)
-      : randF(0, Math.PI * 2);
+    const localAngle = nearView ? randF(-Math.PI / 2.6, Math.PI / 2.6) : randF(0, Math.PI * 2);
     const distance = randF(XR_DISTANCE_MIN, XR_DISTANCE_MAX);
     const direction = [
       forward[0] * Math.cos(localAngle) + right[0] * Math.sin(localAngle),
@@ -1103,18 +1043,12 @@ function getXRSpawnPose(cameraMatrix, cameraPosition, nearView = false) {
     const spacing = getNearestXRObjectDistance(position);
 
     if (spacing >= XR_MIN_OBJECT_SPACING) {
-      return {
-        position,
-        yaw: Math.atan2(-direction[0], -direction[1])
-      };
+      return { position, yaw: Math.atan2(-direction[0], -direction[1]) };
     }
 
     if (spacing > bestSpacing) {
       bestSpacing = spacing;
-      bestPose = {
-        position,
-        yaw: Math.atan2(-direction[0], -direction[1])
-      };
+      bestPose = { position, yaw: Math.atan2(-direction[0], -direction[1]) };
     }
   }
 
@@ -1125,17 +1059,12 @@ function getHorizontalCameraForward(cameraMatrix) {
   const fwdX = -cameraMatrix[8];
   const fwdZ = -cameraMatrix[10];
   const fwdLen = Math.sqrt(fwdX * fwdX + fwdZ * fwdZ);
-
-  if (fwdLen <= 0.001) {
-    return [0, -1];
-  }
-
+  if (fwdLen <= 0.001) return [0, -1];
   return [fwdX / fwdLen, fwdZ / fwdLen];
 }
 
 function getNearestXRObjectDistance(position) {
   const activeObjects = xrObjects.filter((object) => !object.caught && !object.catching && !object.expiring);
-
   if (activeObjects.length === 0) return Infinity;
 
   return activeObjects.reduce((nearest, object) => {
@@ -1153,26 +1082,18 @@ function getSpawnAssetXR() {
   if (DECOY_ASSETS.length === 0 || shouldSpawnTargetAssetXR(activeCount, targetCount)) {
     return TARGET_ASSET;
   }
-
   return DECOY_ASSETS[randomNumber(0, DECOY_ASSETS.length - 1)];
 }
 
 function shouldSpawnTargetAssetXR(activeCount, targetCount) {
   if (targetCount < XR_MIN_TARGET_OBJECTS) return true;
-
-  const maxTargetCount = Math.max(
-    XR_MIN_TARGET_OBJECTS + 1,
-    Math.ceil(activeCount * XR_MAX_TARGET_RATIO)
-  );
-
+  const maxTargetCount = Math.max(XR_MIN_TARGET_OBJECTS + 1, Math.ceil(activeCount * XR_MAX_TARGET_RATIO));
   if (targetCount >= maxTargetCount) return false;
-
   return Math.random() < XR_TARGET_SPAWN_RATIO;
 }
 
 function expireXRObjects(time) {
   if (!Number.isFinite(XR_LIFETIME_MIN)) return;
-
   const now = performance.now();
 
   if (now >= nextXRExpireAt) {
@@ -1198,35 +1119,20 @@ function expireXRObjects(time) {
 function refillXRCurrentView(time) {
   if (time - xrLastRefillAt < VIEW_REFILL_COOLDOWN) return;
   if (getActiveXRObjectCount() >= XR_MAX_ACTIVE_OBJECTS) return;
-
   xrLastRefillAt = time;
   spawnXRObject(false);
 }
 
 function getActiveXRObjectCount() {
-  return xrObjects.filter((object) => !object.caught && !object.catching && !object.expiring).length;
-}
-
-function updateXRHoverStates() {
-  if (!xrLastViewProjection) return;
-
-  const hoveredObject = getXRAimedObject(XR_HOVER_RADIUS);
-
-  xrObjects.forEach((object) => {
-    if (object.caught || object.catching || object.expiring) return;
-
-    const targetScale = object === hoveredObject ? XR_HOVER_SCALE : 1;
-    object.hoverScale = (object.hoverScale || 1) + (targetScale - (object.hoverScale || 1)) * XR_HOVER_SMOOTHING;
-  });
+  return xrObjects.filter((o) => !o.caught && !o.catching && !o.expiring).length;
 }
 
 function getVisibleXRObjectCount() {
-  return xrObjects.filter((object) => !object.caught && !object.catching && !object.expiring && isXRObjectInView(object)).length;
+  return xrObjects.filter((o) => !o.caught && !o.catching && !o.expiring && isXRObjectInView(o)).length;
 }
 
 function isXRObjectInView(object) {
   if (!xrLastViewProjection) return true;
-
   const ndc = projectXRPoint(object.position, xrLastViewProjection);
   return ndc && Math.abs(ndc.x) <= 1.25 && Math.abs(ndc.y) <= 1.25 && ndc.z >= -1 && ndc.z <= 1;
 }
@@ -1234,22 +1140,11 @@ function isXRObjectInView(object) {
 function catchXRObjectByMarker() {
   if (!xrActive || !xrLastViewProjection) return false;
 
-  const object = getXRAimedObject(0.22);
-
-  if (!object) {
-    showMissEffect();
-    return true;
-  }
-
-  collectXRObject(object);
-  return true;
-}
-
-function getXRAimedObject(radius) {
   let closest = null;
   let closestDist = Infinity;
   let closestTarget = null;
   let closestTargetDist = Infinity;
+  const radius = 0.22;
 
   xrObjects.forEach((object) => {
     if (object.caught || object.catching || object.expiring) return;
@@ -1264,14 +1159,21 @@ function getXRAimedObject(radius) {
       closestTarget = object;
       closestTargetDist = distance;
     }
-
     if (distance < closestDist) {
       closest = object;
       closestDist = distance;
     }
   });
 
-  return closestTarget || closest;
+  const object = closestTarget || closest;
+
+  if (!object) {
+    showMissEffect();
+    return true;
+  }
+
+  collectXRObject(object);
+  return true;
 }
 
 function collectXRObject(object) {
@@ -1287,9 +1189,7 @@ function collectXRObject(object) {
     createPlusOne(window.innerWidth / 2, window.innerHeight / 2);
 
     if (score >= TARGET_SCORE) {
-      setTimeout(() => {
-        endGame();
-      }, XR_CATCH_ANIM_MS + 80);
+      setTimeout(() => endGame(), XR_CATCH_ANIM_MS + 80);
     }
   } else {
     showMissEffect();
@@ -1330,7 +1230,6 @@ function stopXRSession(endSession = true) {
   if (xrSession && endSession) {
     xrSession.end().catch(() => {});
   }
-
   xrSession = null;
   xrRefSpace = null;
 }
@@ -1349,16 +1248,11 @@ async function startVoiceCatch() {
 
   try {
     voiceStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false
-      },
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       video: false
     });
 
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-
     if (!AudioContextClass) return;
 
     voiceAudioContext = new AudioContextClass();
@@ -1374,7 +1268,6 @@ async function startVoiceCatch() {
 
 function startSpeechCatch() {
   const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
-
   if (!SpeechRecognitionClass) return;
 
   voiceRecognition = new SpeechRecognitionClass();
@@ -1385,7 +1278,6 @@ function startSpeechCatch() {
   voiceRecognition.onresult = (event) => {
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const transcript = event.results[i][0].transcript;
-
       if (isIjoCommand(transcript)) {
         triggerVoiceCatch();
         break;
@@ -1401,19 +1293,11 @@ function startSpeechCatch() {
 
   voiceRecognition.onend = () => {
     if (gameRunning && voiceActive && voiceRecognition) {
-      try {
-        voiceRecognition.start();
-      } catch (error) {
-        // Browser may still be closing the previous recognition session.
-      }
+      try { voiceRecognition.start(); } catch (error) {}
     }
   };
 
-  try {
-    voiceRecognition.start();
-  } catch (error) {
-    voiceRecognition = null;
-  }
+  try { voiceRecognition.start(); } catch (error) { voiceRecognition = null; }
 }
 
 function startShoutLoop() {
@@ -1428,7 +1312,6 @@ function startShoutLoop() {
     }
 
     voiceAnalyser.getByteTimeDomainData(buffer);
-
     let sum = 0;
     for (let i = 0; i < buffer.length; i++) {
       const value = (buffer[i] - 128) / 128;
@@ -1436,7 +1319,6 @@ function startShoutLoop() {
     }
 
     const rms = Math.sqrt(sum / buffer.length);
-
     if (rms >= SHOUT_RMS_THRESHOLD) {
       triggerVoiceCatch();
     }
@@ -1449,9 +1331,7 @@ function startShoutLoop() {
 
 function triggerVoiceCatch() {
   const now = Date.now();
-
   if (!gameRunning || now - lastVoiceCatchAt < VOICE_CATCH_COOLDOWN_MS) return;
-
   lastVoiceCatchAt = now;
   catchChiliByMarker();
 }
@@ -1463,11 +1343,7 @@ function stopVoiceCatch() {
     voiceRecognition.onend = null;
     voiceRecognition.onerror = null;
     voiceRecognition.onresult = null;
-    try {
-      voiceRecognition.stop();
-    } catch (error) {
-      // Some browsers throw if recognition is already stopped.
-    }
+    try { voiceRecognition.stop(); } catch (error) {}
   }
   voiceRecognition = null;
 
@@ -1477,9 +1353,7 @@ function stopVoiceCatch() {
   }
 
   if (voiceStream) {
-    voiceStream.getTracks().forEach((track) => {
-      track.stop();
-    });
+    voiceStream.getTracks().forEach((track) => track.stop());
   }
   voiceStream = null;
 
@@ -1522,7 +1396,6 @@ async function startGame() {
 
   startVoiceCatch();
   runTimer();
-
   runXRSpawner();
 }
 
@@ -1549,10 +1422,8 @@ function resetGameData() {
 
 function runTimer() {
   clearInterval(timerInterval);
-
   timerInterval = setInterval(() => {
     if (!gameRunning) return;
-
     elapsedTime++;
     timerText.textContent = formatElapsedTime(elapsedTime);
   }, 1000);
@@ -1560,14 +1431,11 @@ function runTimer() {
 
 function runSpawner() {
   clearSpawnTimers();
-
   for (let i = 0; i < INITIAL_CHILI_COUNT; i++) {
     scheduleNextChili(260 + i * randomNumber(90, 230), i < 1);
   }
-
   spawnInterval = setInterval(() => {
     if (!gameRunning) return;
-
     if (getActiveChiliCount() < MAX_ACTIVE_CHILIES) {
       scheduleNextChili(randomNumber(80, 360), false);
     }
@@ -1581,17 +1449,13 @@ function scheduleNextChili(delay, nearView = false) {
       spawnChili(nearView);
     }
   }, delay);
-
   spawnTimeouts.push(timeoutId);
 }
 
 function clearSpawnTimers() {
   clearInterval(spawnInterval);
   spawnInterval = null;
-
-  spawnTimeouts.forEach((timeoutId) => {
-    clearTimeout(timeoutId);
-  });
+  spawnTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
   spawnTimeouts = [];
   lastViewRefillAt = 0;
   nextChiliExpireAt = 0;
@@ -1626,7 +1490,6 @@ function endGame() {
 
   document.body.classList.remove("game-mode");
   document.body.classList.add("result-mode");
-
   resultScreen.classList.add("active");
 }
 
@@ -1668,7 +1531,6 @@ function resetToIntro() {
 
 function startPlayAgainCooldown() {
   let cooldownLeft = PLAY_AGAIN_COOLDOWN;
-
   clearPlayAgainCooldown();
 
   playAgainBtn.disabled = true;
@@ -1689,7 +1551,6 @@ function startPlayAgainCooldown() {
 function clearPlayAgainCooldown() {
   clearInterval(playAgainCooldownInterval);
   playAgainCooldownInterval = null;
-
   playAgainBtn.disabled = false;
   playAgainBtn.textContent = "Play Again";
 }
@@ -1726,10 +1587,7 @@ function spawnChili(nearView = false) {
   if (baseGamma !== null) {
     const rangeH = nearView ? 10 : WORLD_RANGE_H;
     const rangeV = nearView ? 7 : WORLD_RANGE_V;
-    const centerGamma = smoothGamma;
-    const centerBeta = smoothBeta;
-    const spawnPosition = getSpacedWorldSpawn(centerGamma, centerBeta, rangeH, rangeV);
-
+    const spawnPosition = getSpacedWorldSpawn(smoothGamma, smoothBeta, rangeH, rangeV);
     chili.dataset.wg = spawnPosition.wg;
     chili.dataset.wb = spawnPosition.wb;
     projectWorldChili(chili);
@@ -1740,16 +1598,12 @@ function spawnChili(nearView = false) {
     const rightLimit  = window.innerWidth - size - 20;
 
     if (bottomLimit <= topLimit || rightLimit <= leftLimit) return;
-
     const spawnPosition = getSpacedScreenSpawn(leftLimit, rightLimit, topLimit, bottomLimit);
     chili.style.left = `${spawnPosition.x}px`;
     chili.style.top  = `${spawnPosition.y}px`;
   }
 
-  chili.addEventListener("pointerdown", (e) => {
-    e.stopPropagation();
-  });
-
+  chili.addEventListener("pointerdown", (e) => e.stopPropagation());
   gameArea.appendChild(chili);
 
   if (baseGamma !== null) {
@@ -1762,7 +1616,6 @@ function spawnChili(nearView = false) {
       projectWorldChili(chili);
       return;
     }
-
     const brightness = (0.78 + depth * 0.2).toFixed(2);
     const saturate = (0.82 + depth * 0.22).toFixed(2);
     const shadowY = Math.round(8 + depth * 12);
@@ -1788,11 +1641,8 @@ function queueChiliExpire(chili) {
   if (chili.dataset.caught === "true" || chili.classList.contains("chili-expire")) return;
 
   const now = performance.now();
-
   if (now < nextChiliExpireAt) {
-    setTimeout(() => {
-      queueChiliExpire(chili);
-    }, nextChiliExpireAt - now + randomNumber(30, 160));
+    setTimeout(() => queueChiliExpire(chili), nextChiliExpireAt - now + randomNumber(30, 160));
     return;
   }
 
@@ -1802,82 +1652,45 @@ function queueChiliExpire(chili) {
 
 function expireChili(chili) {
   chili.classList.add("chili-expire");
-  setTimeout(() => {
-    if (chili.parentElement) chili.remove();
-  }, 380);
+  setTimeout(() => { if (chili.parentElement) chili.remove(); }, 380);
 }
 
-function getActiveChiliCount() {
-  return document.querySelectorAll(".chili:not(.chili-expire)").length;
-}
-
+function getActiveChiliCount() { return document.querySelectorAll(".chili:not(.chili-expire)").length; }
 function getVisibleChiliCount() {
   let visibleCount = 0;
-
   document.querySelectorAll(".chili:not(.chili-expire)").forEach((chili) => {
     if (chili.dataset.caught === "true") return;
-
-    if (isRectInViewport(chili.getBoundingClientRect(), 40)) {
-      visibleCount++;
-    }
+    if (isRectInViewport(chili.getBoundingClientRect(), 40)) visibleCount++;
   });
-
   return visibleCount;
 }
 
-function getActiveTargetCount() {
-  return document.querySelectorAll('.chili[data-target="true"]:not(.chili-expire)').length;
-}
+function getActiveTargetCount() { return document.querySelectorAll('.chili[data-target="true"]:not(.chili-expire)').length; }
 
 function getSpawnAsset() {
   const activeCount = getActiveChiliCount();
   const targetCount = getActiveTargetCount();
-
-  if (DECOY_ASSETS.length === 0 || shouldSpawnTargetAsset(activeCount, targetCount)) {
-    return TARGET_ASSET;
-  }
-
+  if (DECOY_ASSETS.length === 0 || shouldSpawnTargetAsset(activeCount, targetCount)) return TARGET_ASSET;
   return DECOY_ASSETS[randomNumber(0, DECOY_ASSETS.length - 1)];
 }
 
 function shouldSpawnTargetAsset(activeCount, targetCount) {
   if (targetCount < MIN_TARGET_CHILIES) return true;
-
-  const maxTargetCount = Math.max(
-    MIN_TARGET_CHILIES + 1,
-    Math.ceil(activeCount * (TARGET_SPAWN_RATIO + 0.12))
-  );
-
+  const maxTargetCount = Math.max(MIN_TARGET_CHILIES + 1, Math.ceil(activeCount * (TARGET_SPAWN_RATIO + 0.12)));
   if (targetCount >= maxTargetCount) return false;
-
   return Math.random() < TARGET_SPAWN_RATIO;
 }
 
 function getSpacedWorldSpawn(centerGamma, centerBeta, rangeH, rangeV) {
   let best = null;
   let bestDistance = -Infinity;
-
   for (let i = 0; i < 24; i++) {
-    const candidate = {
-      wg: centerGamma + randF(-rangeH, rangeH),
-      wb: centerBeta + randF(-rangeV, rangeV)
-    };
+    const candidate = { wg: centerGamma + randF(-rangeH, rangeH), wb: centerBeta + randF(-rangeV, rangeV) };
     const distance = getNearestChiliScreenDistance(candidate.wg, candidate.wb);
-
-    if (distance >= MIN_CHILI_SCREEN_DISTANCE) {
-      return candidate;
-    }
-
-    if (distance > bestDistance) {
-      best = candidate;
-      bestDistance = distance;
-    }
+    if (distance >= MIN_CHILI_SCREEN_DISTANCE) return candidate;
+    if (distance > bestDistance) { best = candidate; bestDistance = distance; }
   }
-
-  return best || {
-    wg: centerGamma + randF(-rangeH, rangeH),
-    wb: centerBeta + randF(-rangeV, rangeV)
-  };
+  return best || { wg: centerGamma + randF(-rangeH, rangeH), wb: centerBeta + randF(-rangeV, rangeV) };
 }
 
 function getNearestChiliScreenDistance(wg, wb) {
@@ -1886,68 +1699,38 @@ function getNearestChiliScreenDistance(wg, wb) {
   const x = cx - (wg - smoothGamma) * PX_PER_DEG_H;
   const y = cy - (wb - smoothBeta) * PX_PER_DEG_V;
   let nearest = Infinity;
-
   document.querySelectorAll(".chili:not(.chili-expire)").forEach((chili) => {
     if (chili.dataset.caught === "true") return;
-
     const rect = chili.getBoundingClientRect();
-    const chiliX = rect.left + rect.width / 2;
-    const chiliY = rect.top + rect.height / 2;
-    nearest = Math.min(nearest, getDistance(x, y, chiliX, chiliY));
+    nearest = Math.min(nearest, getDistance(x, y, rect.left + rect.width / 2, rect.top + rect.height / 2));
   });
-
   return nearest;
 }
 
 function getSpacedScreenSpawn(leftLimit, rightLimit, topLimit, bottomLimit) {
   let best = null;
   let bestDistance = -Infinity;
-
   for (let i = 0; i < 24; i++) {
-    const candidate = {
-      x: randomNumber(leftLimit, rightLimit),
-      y: randomNumber(topLimit, bottomLimit)
-    };
+    const candidate = { x: randomNumber(leftLimit, rightLimit), y: randomNumber(topLimit, bottomLimit) };
     const distance = getNearestChiliPointDistance(candidate.x, candidate.y);
-
-    if (distance >= MIN_CHILI_SCREEN_DISTANCE) {
-      return candidate;
-    }
-
-    if (distance > bestDistance) {
-      best = candidate;
-      bestDistance = distance;
-    }
+    if (distance >= MIN_CHILI_SCREEN_DISTANCE) return candidate;
+    if (distance > bestDistance) { best = candidate; bestDistance = distance; }
   }
-
-  return best || {
-    x: randomNumber(leftLimit, rightLimit),
-    y: randomNumber(topLimit, bottomLimit)
-  };
+  return best || { x: randomNumber(leftLimit, rightLimit), y: randomNumber(topLimit, bottomLimit) };
 }
 
 function getNearestChiliPointDistance(x, y) {
   let nearest = Infinity;
-
   document.querySelectorAll(".chili:not(.chili-expire)").forEach((chili) => {
     if (chili.dataset.caught === "true") return;
-
     const rect = chili.getBoundingClientRect();
-    const chiliX = rect.left + rect.width / 2;
-    const chiliY = rect.top + rect.height / 2;
-    nearest = Math.min(nearest, getDistance(x, y, chiliX, chiliY));
+    nearest = Math.min(nearest, getDistance(x, y, rect.left + rect.width / 2, rect.top + rect.height / 2));
   });
-
   return nearest;
 }
 
 function isRectInViewport(rect, margin = 0) {
-  return (
-    rect.right >= -margin &&
-    rect.left <= window.innerWidth + margin &&
-    rect.bottom >= -margin &&
-    rect.top <= window.innerHeight + margin
-  );
+  return (rect.right >= -margin && rect.left <= window.innerWidth + margin && rect.bottom >= -margin && rect.top <= window.innerHeight + margin);
 }
 
 /* =========================
@@ -1956,13 +1739,9 @@ function isRectInViewport(rect, margin = 0) {
 
 function catchChiliByMarker() {
   if (!gameRunning) return;
-
-  if (xrActive && catchXRObjectByMarker()) {
-    return;
-  }
+  if (xrActive && catchXRObjectByMarker()) return;
 
   const targetHit = findChiliInMarker();
-
   if (targetHit) {
     collectChili(targetHit.chili, targetHit.x, targetHit.y);
   } else {
@@ -1973,10 +1752,7 @@ function catchChiliByMarker() {
 function findChiliInMarker() {
   const target = document.querySelector(".aim-area");
   const chilies = document.querySelectorAll(".chili:not(.chili-expire)");
-
-  if (!target || chilies.length === 0) {
-    return null;
-  }
+  if (!target || chilies.length === 0) return null;
 
   const targetRect = target.getBoundingClientRect();
   const targetCenterX = targetRect.left + targetRect.width / 2;
@@ -1989,135 +1765,85 @@ function findChiliInMarker() {
   let closestY = 0;
   let closestTarget = null;
   let closestTargetDist = Infinity;
-  let closestTargetX = 0;
-  let closestTargetY = 0;
 
   chilies.forEach((chili) => {
     if (chili.dataset.caught === "true") return;
-
-    const chiliRect = chili.getBoundingClientRect();
-    const chiliCenterX = chiliRect.left + chiliRect.width / 2;
-    const chiliCenterY = chiliRect.top + chiliRect.height / 2;
-
-    const distance = getDistance(targetCenterX, targetCenterY, chiliCenterX, chiliCenterY);
+    const rect = chili.getBoundingClientRect();
+    const distance = getDistance(targetCenterX, targetCenterY, rect.left + rect.width / 2, rect.top + rect.height / 2);
 
     if (distance <= catchRadius && chili.dataset.target === "true" && distance < closestTargetDist) {
       closestTargetDist = distance;
       closestTarget = chili;
-      closestTargetX = chiliRect.left;
-      closestTargetY = chiliRect.top;
+      closestTargetX = rect.left;
+      closestTargetY = rect.top;
     }
-
     if (distance <= catchRadius && distance < closestDist) {
       closestDist = distance;
       closestChili = chili;
-      closestX = chiliRect.left;
-      closestY = chiliRect.top;
+      closestX = rect.left;
+      closestY = rect.top;
     }
   });
 
-  if (closestTarget) {
-    return {
-      chili: closestTarget,
-      x: closestTargetX,
-      y: closestTargetY
-    };
-  }
-
-  if (closestChili) {
-    return {
-      chili: closestChili,
-      x: closestX,
-      y: closestY
-    };
-  }
-
+  if (closestTarget) return { chili: closestTarget, x: closestTargetX, y: closestTargetY };
+  if (closestChili) return { chili: closestChili, x: closestX, y: closestY };
   return null;
 }
 
 function collectChili(chili, x, y) {
-  if (!gameRunning) return;
-  if (!chili || !chili.parentElement) return;
-  if (chili.dataset.caught === "true") return;
+  if (!gameRunning || !chili || !chili.parentElement || chili.dataset.caught === "true") return;
 
   resetMissEffect();
-
   chili.dataset.caught = "true";
-  const isTarget = chili.dataset.target === "true";
 
-  if (isTarget) {
+  if (chili.dataset.target === "true") {
     score++;
     updateScoreText();
-
     createHitEffect(x, y);
     createPlusOne(x, y);
 
-    if (score >= TARGET_SCORE) {
-      setTimeout(() => {
-        endGame();
-      }, 320);
-    }
+    if (score >= TARGET_SCORE) setTimeout(() => endGame(), 320);
   } else {
     showMissEffect();
   }
 
   scheduleNextChili(randomNumber(350, 850), false);
-
   chili.classList.add("chili-caught");
-  setTimeout(() => {
-    if (chili.parentElement) chili.remove();
-  }, 280);
+  setTimeout(() => { if (chili.parentElement) chili.remove(); }, 280);
 }
 
 function showMissEffect() {
   const target = document.querySelector(".aim-area");
-
   if (target) {
     target.classList.remove("miss");
     void target.offsetWidth;
     target.classList.add("miss");
-
-    setTimeout(() => {
-      target.classList.remove("miss");
-    }, 300);
+    setTimeout(() => target.classList.remove("miss"), 300);
   }
 }
 
 function resetMissEffect() {
   const target = document.querySelector(".aim-area");
-
-  if (target) {
-    target.classList.remove("miss");
-  }
+  if (target) target.classList.remove("miss");
 }
 
 function createHitEffect(x, y) {
   const effect = document.createElement("div");
-
   effect.className = "hit-effect";
   effect.style.left = `${x - 8}px`;
   effect.style.top = `${y - 8}px`;
-
   gameArea.appendChild(effect);
-
-  setTimeout(() => {
-    effect.remove();
-  }, 500);
+  setTimeout(() => effect.remove(), 500);
 }
 
 function createPlusOne(x, y) {
   const plus = document.createElement("div");
-
   plus.className = "plus-one";
   plus.textContent = "+1";
   plus.style.left = `${x + 22}px`;
   plus.style.top = `${y - 12}px`;
-
   gameArea.appendChild(plus);
-
-  setTimeout(() => {
-    plus.remove();
-  }, 700);
+  setTimeout(() => plus.remove(), 700);
 }
 
 /* =========================
@@ -2127,8 +1853,7 @@ function createPlusOne(x, y) {
 async function loadLeaderboard() {
   try {
     const data = await fetchJson(GET_LEADERBOARD_API);
-    const leaderboard = normalizeLeaderboardResponse(data);
-    renderLeaderboard(leaderboard);
+    renderLeaderboard(normalizeLeaderboardResponse(data));
   } catch (error) {
     console.warn("Leaderboard unavailable:", error);
     renderLeaderboardUnavailable();
@@ -2137,16 +1862,10 @@ async function loadLeaderboard() {
 
 function renderLeaderboard(leaderboard) {
   leaderboardList.innerHTML = "";
-
   if (!leaderboard || leaderboard.length === 0) {
     const emptyRow = document.createElement("div");
     emptyRow.className = "leaderboard-item";
-    emptyRow.innerHTML = `
-      <span class="leaderboard-rank">-</span>
-      <span class="leaderboard-name">No results yet</span>
-      <span class="leaderboard-score">0</span>
-    `;
-
+    emptyRow.innerHTML = `<span class="leaderboard-rank">-</span><span class="leaderboard-name">No results yet</span><span class="leaderboard-score">0</span>`;
     leaderboardList.appendChild(emptyRow);
     return;
   }
@@ -2154,16 +1873,9 @@ function renderLeaderboard(leaderboard) {
   leaderboard.forEach((item, index) => {
     const row = document.createElement("div");
     row.className = "leaderboard-item";
-
     const safeName = escapeHtml(item.name || item.player_name || "Player");
     const safeScore = Number(item.total_score ?? item.score ?? item.time_seconds ?? item.time ?? 0);
-
-    row.innerHTML = `
-      <span class="leaderboard-rank">#${index + 1}</span>
-      <span class="leaderboard-name">${safeName}</span>
-      <span class="leaderboard-score">${formatElapsedTime(safeScore)}</span>
-    `;
-
+    row.innerHTML = `<span class="leaderboard-rank">#${index + 1}</span><span class="leaderboard-name">${safeName}</span><span class="leaderboard-score">${formatElapsedTime(safeScore)}</span>`;
     leaderboardList.appendChild(row);
   });
 }
@@ -2178,15 +1890,9 @@ function normalizeLeaderboardResponse(data) {
 
 function renderLeaderboardUnavailable() {
   leaderboardList.innerHTML = "";
-
   const row = document.createElement("div");
   row.className = "leaderboard-item";
-  row.innerHTML = `
-    <span class="leaderboard-rank">-</span>
-    <span class="leaderboard-name">Leaderboard unavailable</span>
-    <span class="leaderboard-score">-</span>
-  `;
-
+  row.innerHTML = `<span class="leaderboard-rank">-</span><span class="leaderboard-name">Leaderboard unavailable</span><span class="leaderboard-score">-</span>`;
   leaderboardList.appendChild(row);
 }
 
@@ -2200,12 +1906,8 @@ function openSaveScoreModal() {
   playerEmailInput.value = "";
   saveMessage.textContent = "";
   saveMessage.className = "save-message";
-
   saveScoreModal.classList.remove("hidden");
-
-  setTimeout(() => {
-    playerNameInput.focus();
-  }, 100);
+  setTimeout(() => playerNameInput.focus(), 100);
 }
 
 function closeSaveScoreModal() {
@@ -2249,16 +1951,8 @@ async function submitScore() {
   try {
     await fetchJson(SAVE_SCORE_API, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        name,
-        email,
-        total_score: elapsedTime,
-        time_seconds: elapsedTime,
-        collected_chilies: TARGET_SCORE
-      })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, email, total_score: elapsedTime, time_seconds: elapsedTime, collected_chilies: TARGET_SCORE })
     });
 
     scoreSaved = true;
@@ -2270,9 +1964,7 @@ async function submitScore() {
     topFiveInfo.classList.remove("hidden");
     await loadLeaderboard();
 
-    setTimeout(() => {
-      closeSaveScoreModal();
-    }, 700);
+    setTimeout(() => closeSaveScoreModal(), 700);
   } catch (error) {
     console.error("Save score error:", error);
     saveMessage.textContent = error.message || "Unable to save score. Please try again.";
@@ -2291,48 +1983,25 @@ async function shareScoreImage() {
 
   try {
     closeAppNotice();
-
     const resultTime = formatElapsedTime(elapsedTime);
     const imageBlob = await createScoreImageBlob(resultTime);
-
-    const file = new File(
-      [imageBlob],
-      "green-chili-hunt-score.png",
-      {
-        type: "image/png"
-      }
-    );
+    const file = new File([imageBlob], "green-chili-hunt-score.png", { type: "image/png" });
 
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      await navigator.share({
-        title: "Green Chili Hunt Score",
-        text: `I collected ${TARGET_SCORE} green chilies in ${resultTime}!`,
-        files: [file]
-      });
-
+      await navigator.share({ title: "Green Chili Hunt Score", text: `I collected ${TARGET_SCORE} green chilies in ${resultTime}!`, files: [file] });
       return;
     }
 
     if (navigator.share) {
-      await navigator.share({
-        title: "Green Chili Hunt Score",
-        text: `I collected ${TARGET_SCORE} green chilies in ${resultTime}!`
-      });
-
+      await navigator.share({ title: "Green Chili Hunt Score", text: `I collected ${TARGET_SCORE} green chilies in ${resultTime}!` });
       return;
     }
 
     downloadScoreImage(imageBlob);
   } catch (error) {
-    if (isShareCancelError(error)) {
-      return;
-    }
-
+    if (isShareCancelError(error)) return;
     console.error("Share error:", error);
-    showAppNotice(
-      "Share Unavailable",
-      "Share is not available on this browser."
-    );
+    showAppNotice("Share Unavailable", "Share is not available on this browser.");
   } finally {
     shareBtn.disabled = false;
   }
@@ -2341,21 +2010,14 @@ async function shareScoreImage() {
 function isShareCancelError(error) {
   const name = (error?.name || "").toLowerCase();
   const message = (error?.message || "").toLowerCase();
-
-  return (
-    name === "aborterror" ||
-    message.includes("cancel") ||
-    message.includes("abort")
-  );
+  return name === "aborterror" || message.includes("cancel") || message.includes("abort");
 }
 
 function createScoreImageBlob(scoreValue) {
   return new Promise((resolve) => {
     const canvas = document.createElement("canvas");
-
     canvas.width = 1080;
     canvas.height = 1920;
-
     const ctx = canvas.getContext("2d");
 
     const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -2407,15 +2069,12 @@ function createScoreImageBlob(scoreValue) {
     ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
     ctx.fillText("Share your score", 540, 1695);
 
-    canvas.toBlob((blob) => {
-      resolve(blob);
-    }, "image/png");
+    canvas.toBlob((blob) => resolve(blob), "image/png");
   });
 }
 
 function drawChiliIcon(ctx, x, y) {
   ctx.save();
-
   ctx.translate(x, y);
   ctx.rotate(-0.35);
 
@@ -2444,15 +2103,12 @@ function drawChiliIcon(ctx, x, y) {
 
 function downloadScoreImage(blob) {
   const url = URL.createObjectURL(blob);
-
   const link = document.createElement("a");
   link.href = url;
   link.download = "green-chili-hunt-score.png";
-
   document.body.appendChild(link);
   link.click();
   link.remove();
-
   URL.revokeObjectURL(url);
 }
 
@@ -2460,93 +2116,38 @@ function downloadScoreImage(blob) {
    HELPERS
 ========================= */
 
-function isValidEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-}
-
-function escapeHtml(text) {
-  return String(text)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
+function isValidEmail(email) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email); }
+function escapeHtml(text) { return String(text).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 function isIjoCommand(text) {
-  const normalized = String(text)
-    .toLowerCase()
-    .replace(/[^a-z\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  return normalized
-    .split(" ")
-    .some((word) => word === "ijo" || word === "hijau");
+  const normalized = String(text).toLowerCase().replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
+  return normalized.split(" ").some((word) => word === "ijo" || word === "hijau" || word === "jau");
 }
-
-function isAndroidDevice() {
-  return /Android/i.test(navigator.userAgent);
-}
-
+function isAndroidDevice() { return /Android/i.test(navigator.userAgent); }
 function roundRect(ctx, x, y, width, height, radius) {
   ctx.beginPath();
   ctx.moveTo(x + radius, y);
   ctx.lineTo(x + width - radius, y);
   ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
   ctx.lineTo(x + width, y + height - radius);
-  ctx.quadraticCurveTo(
-    x + width,
-    y + height,
-    x + width - radius,
-    y + height
-  );
+  ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
   ctx.lineTo(x + radius, y + height);
   ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
   ctx.lineTo(x, y + radius);
   ctx.quadraticCurveTo(x, y, x + radius, y);
   ctx.closePath();
 }
-
-function getDistance(x1, y1, x2, y2) {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-function addVec3(a, b) {
-  return [
-    a[0] + b[0],
-    a[1] + b[1],
-    a[2] + b[2]
-  ];
-}
-
-function scaleVec3(vector, scale) {
-  return [
-    vector[0] * scale,
-    vector[1] * scale,
-    vector[2] * scale
-  ];
-}
-
+function getDistance(x1, y1, x2, y2) { return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2); }
+function addVec3(a, b) { return [a[0] + b[0], a[1] + b[1], a[2] + b[2]]; }
+function scaleVec3(vector, scale) { return [vector[0] * scale, vector[1] * scale, vector[2] * scale]; }
 function multiplyMat4(a, b) {
   const out = new Float32Array(16);
-
   for (let column = 0; column < 4; column++) {
     for (let row = 0; row < 4; row++) {
-      out[column * 4 + row] =
-        a[0 * 4 + row] * b[column * 4 + 0] +
-        a[1 * 4 + row] * b[column * 4 + 1] +
-        a[2 * 4 + row] * b[column * 4 + 2] +
-        a[3 * 4 + row] * b[column * 4 + 3];
+      out[column * 4 + row] = a[0 * 4 + row] * b[column * 4 + 0] + a[1 * 4 + row] * b[column * 4 + 1] + a[2 * 4 + row] * b[column * 4 + 2] + a[3 * 4 + row] * b[column * 4 + 3];
     }
   }
-
   return out;
 }
-
 function makeXRObjectMatrix(object, scale = 1) {
   const size = object.size * scale;
   const yaw = object.yaw || 0;
@@ -2555,7 +2156,6 @@ function makeXRObjectMatrix(object, scale = 1) {
   const right = [cos, 0, -sin];
   const forward = [sin, 0, cos];
   const up = [0, 1, 0];
-
   return new Float32Array([
     right[0] * size, right[1] * size, right[2] * size, 0,
     forward[0] * size, forward[1] * size, forward[2] * size, 0,
@@ -2563,59 +2163,22 @@ function makeXRObjectMatrix(object, scale = 1) {
     object.position[0], object.position[1], object.position[2], 1
   ]);
 }
-
 function projectXRPoint(point, viewProjection) {
-  const x = point[0];
-  const y = point[1];
-  const z = point[2];
+  const x = point[0]; const y = point[1]; const z = point[2];
   const clipX = viewProjection[0] * x + viewProjection[4] * y + viewProjection[8] * z + viewProjection[12];
   const clipY = viewProjection[1] * x + viewProjection[5] * y + viewProjection[9] * z + viewProjection[13];
   const clipZ = viewProjection[2] * x + viewProjection[6] * y + viewProjection[10] * z + viewProjection[14];
   const clipW = viewProjection[3] * x + viewProjection[7] * y + viewProjection[11] * z + viewProjection[15];
-
   if (clipW <= 0.0001) return null;
-
-  return {
-    x: clipX / clipW,
-    y: clipY / clipW,
-    z: clipZ / clipW
-  };
+  return { x: clipX / clipW, y: clipY / clipW, z: clipZ / clipW };
 }
-
-function updateScoreText() {
-  scoreText.textContent = `${Math.min(score, TARGET_SCORE)}/${TARGET_SCORE}`;
-}
-
-function formatElapsedTime(totalSeconds) {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-
-  if (minutes <= 0) {
-    return `${seconds}s`;
-  }
-
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
+function updateScoreText() { scoreText.textContent = `${Math.min(score, TARGET_SCORE)}/${TARGET_SCORE}`; }
+function formatElapsedTime(totalSeconds) { return `${totalSeconds}s`; }
 function smoothAngle(current, target) {
   const delta = target - current;
-
-  if (Math.abs(delta) <= ORIENT_DEADZONE) {
-    return current;
-  }
-
+  if (Math.abs(delta) <= ORIENT_DEADZONE) return current;
   return current + ORIENT_SMOOTH * delta;
 }
-
-function clamp(value, min, max) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function randomNumber(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
-}
-
-// Random float in [min, max]
-function randF(min, max) {
-  return Math.random() * (max - min) + min;
-}
+function clamp(value, min, max) { return Math.min(Math.max(value, min), max); }
+function randomNumber(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function randF(min, max) { return Math.random() * (max - min) + min; }
