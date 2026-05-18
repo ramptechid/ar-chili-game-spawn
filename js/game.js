@@ -157,31 +157,66 @@ const TARGET_ASSET = {
 const DECOY_ASSETS = [
   {
     src: "assets/images/bintang.png",
-    modelSrc: "assets/models/bintang_low_poly.glb",
-    alt: "Star Decoy",
+    modelSrc: "assets/models/Alarm_Clock.glb",
+    alt: "Alarm Clock Decoy",
     minSize: 34,
     maxSize: 68
   },
   {
     src: "assets/images/kotak-tinggi.png",
-    modelSrc: "assets/models/kotak_tinggi_low_poly.glb",
-    alt: "Tall Box Decoy",
+    modelSrc: "assets/models/Ball.glb",
+    alt: "Ball Decoy",
     minSize: 38,
     maxSize: 78
   },
   {
     src: "assets/images/persegi-panjang.png",
-    modelSrc: "assets/models/persegi_panjang_low_poly.glb",
-    alt: "Rectangle Decoy",
+    modelSrc: "assets/models/Barbel_3Kg.glb",
+    alt: "Barbell Decoy",
     minSize: 44,
     maxSize: 86
   },
   {
     src: "assets/images/segi-enam.png",
-    modelSrc: "assets/models/segi_enam_low_poly.glb",
-    alt: "Hexagon Decoy",
+    modelSrc: "assets/models/Bedside_Table_001.glb",
+    alt: "Bedside Table Decoy",
     minSize: 36,
     maxSize: 72
+  },
+  {
+    src: "assets/images/bintang.png",
+    modelSrc: "assets/models/Horn.glb",
+    alt: "Horn Decoy",
+    minSize: 38,
+    maxSize: 78
+  },
+  {
+    src: "assets/images/kotak-tinggi.png",
+    modelSrc: "assets/models/Plane.glb",
+    alt: "Plane Decoy",
+    minSize: 42,
+    maxSize: 82
+  },
+  {
+    src: "assets/images/persegi-panjang.png",
+    modelSrc: "assets/models/Sun_Glasses.glb",
+    alt: "Sun Glasses Decoy",
+    minSize: 44,
+    maxSize: 84
+  },
+  {
+    src: "assets/images/segi-enam.png",
+    modelSrc: "assets/models/Table.glb",
+    alt: "Table Decoy",
+    minSize: 42,
+    maxSize: 82
+  },
+  {
+    src: "assets/images/bintang.png",
+    modelSrc: "assets/models/Tea_Pot.glb",
+    alt: "Tea Pot Decoy",
+    minSize: 38,
+    maxSize: 78
   }
 ];
 
@@ -647,6 +682,7 @@ function createXRModelFromGlb(arrayBuffer) {
   });
 
   const primitives = [];
+  const parsedPrimitives = [];
 
   (json.meshes || []).forEach((mesh) => {
     (mesh.primitives || []).forEach((primitive) => {
@@ -658,33 +694,96 @@ function createXRModelFromGlb(arrayBuffer) {
         ? readGlbAccessor(json, bin, primitive.indices)
         : null;
 
-      const positionBuffer = xrGl.createBuffer();
-      xrGl.bindBuffer(xrGl.ARRAY_BUFFER, positionBuffer);
-      xrGl.bufferData(xrGl.ARRAY_BUFFER, positions, xrGl.STATIC_DRAW);
-
-      const normalBuffer = xrGl.createBuffer();
-      xrGl.bindBuffer(xrGl.ARRAY_BUFFER, normalBuffer);
-      xrGl.bufferData(xrGl.ARRAY_BUFFER, normals, xrGl.STATIC_DRAW);
-
-      let indexBuffer = null;
-      if (indices) {
-        indexBuffer = xrGl.createBuffer();
-        xrGl.bindBuffer(xrGl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-        xrGl.bufferData(xrGl.ELEMENT_ARRAY_BUFFER, indices, xrGl.STATIC_DRAW);
-      }
-
-      primitives.push({
-        positionBuffer,
-        normalBuffer,
-        indexBuffer,
-        indexType: indices instanceof Uint32Array ? xrGl.UNSIGNED_INT : xrGl.UNSIGNED_SHORT,
-        count: indices ? indices.length : positions.length / 3,
-        color: materials[primitive.material] || new Float32Array([0.85, 1, 0.45, 1])
+      parsedPrimitives.push({
+        positions,
+        normals,
+        indices,
+        material: primitive.material
       });
     });
   });
 
+  const bounds = getXRModelBounds(parsedPrimitives);
+
+  parsedPrimitives.forEach((primitive) => {
+    const positions = normalizeXRPositions(primitive.positions, bounds);
+    const positionBuffer = xrGl.createBuffer();
+    xrGl.bindBuffer(xrGl.ARRAY_BUFFER, positionBuffer);
+    xrGl.bufferData(xrGl.ARRAY_BUFFER, positions, xrGl.STATIC_DRAW);
+
+    const normalBuffer = xrGl.createBuffer();
+    xrGl.bindBuffer(xrGl.ARRAY_BUFFER, normalBuffer);
+    xrGl.bufferData(xrGl.ARRAY_BUFFER, primitive.normals, xrGl.STATIC_DRAW);
+
+    let indexBuffer = null;
+    if (primitive.indices) {
+      indexBuffer = xrGl.createBuffer();
+      xrGl.bindBuffer(xrGl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+      xrGl.bufferData(xrGl.ELEMENT_ARRAY_BUFFER, primitive.indices, xrGl.STATIC_DRAW);
+    }
+
+    primitives.push({
+      positionBuffer,
+      normalBuffer,
+      indexBuffer,
+      indexType: getXRIndexType(primitive.indices),
+      count: primitive.indices ? primitive.indices.length : positions.length / 3,
+      color: materials[primitive.material] || new Float32Array([0.85, 1, 0.45, 1])
+    });
+  });
+
   return { primitives };
+}
+
+function getXRModelBounds(primitives) {
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+
+  primitives.forEach((primitive) => {
+    for (let i = 0; i < primitive.positions.length; i += 3) {
+      min[0] = Math.min(min[0], primitive.positions[i]);
+      min[1] = Math.min(min[1], primitive.positions[i + 1]);
+      min[2] = Math.min(min[2], primitive.positions[i + 2]);
+      max[0] = Math.max(max[0], primitive.positions[i]);
+      max[1] = Math.max(max[1], primitive.positions[i + 1]);
+      max[2] = Math.max(max[2], primitive.positions[i + 2]);
+    }
+  });
+
+  const size = [
+    max[0] - min[0],
+    max[1] - min[1],
+    max[2] - min[2]
+  ];
+  const longestSide = Math.max(size[0], size[1], size[2], 0.0001);
+
+  return {
+    center: [
+      (min[0] + max[0]) / 2,
+      (min[1] + max[1]) / 2,
+      (min[2] + max[2]) / 2
+    ],
+    scale: 1 / longestSide
+  };
+}
+
+function normalizeXRPositions(positions, bounds) {
+  const normalized = new Float32Array(positions.length);
+
+  for (let i = 0; i < positions.length; i += 3) {
+    normalized[i] = (positions[i] - bounds.center[0]) * bounds.scale;
+    normalized[i + 1] = (positions[i + 1] - bounds.center[1]) * bounds.scale;
+    normalized[i + 2] = (positions[i + 2] - bounds.center[2]) * bounds.scale;
+  }
+
+  return normalized;
+}
+
+function getXRIndexType(indices) {
+  if (!indices) return xrGl.UNSIGNED_SHORT;
+  if (indices instanceof Uint32Array) return xrGl.UNSIGNED_INT;
+  if (indices instanceof Uint8Array) return xrGl.UNSIGNED_BYTE;
+  return xrGl.UNSIGNED_SHORT;
 }
 
 function readGlbAccessor(json, bin, accessorIndex) {
@@ -710,6 +809,9 @@ function getGlbAccessorComponentCount(type) {
 
 function getGlbAccessorArrayType(componentType) {
   switch (componentType) {
+    case 5120: return Int8Array;
+    case 5121: return Uint8Array;
+    case 5122: return Int16Array;
     case 5123: return Uint16Array;
     case 5125: return Uint32Array;
     case 5126: return Float32Array;
