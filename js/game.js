@@ -133,6 +133,10 @@ const XR_FADEIN_MS = 320;
 const XR_EXPIRE_MS = 520;
 const XR_EXPIRE_STAGGER_MIN = 520;
 const XR_EXPIRE_STAGGER_MAX = 1250;
+const XR_NORMALIZED_MODEL_SIZE = 3.0;
+const XR_HOVER_SCALE = 1.2;
+const XR_HOVER_RADIUS = 0.24;
+const XR_HOVER_SMOOTHING = 0.12;
 const XR_MATERIAL_EXPOSURE = 1.45;
 const XR_MATERIAL_MIN_COLOR = 0.36;
 const XR_MATERIAL_BLACK_FLOOR = 0.06;
@@ -599,8 +603,12 @@ function setupXRRenderer() {
 
     void main() {
       vec3 normal = normalize(mat3(u_model) * a_normal);
-      vec3 lightDir = normalize(vec3(0.35, 0.8, 0.45));
-      v_light = 0.9 + max(dot(normal, lightDir), 0.0) * 0.35;
+      vec3 keyLight = normalize(vec3(0.35, 0.9, 0.45));
+      vec3 fillLight = normalize(vec3(-0.55, 0.45, -0.25));
+      float ambientLight = 1.15;
+      float directionalLight = max(dot(normal, keyLight), 0.0) * 0.58;
+      float cityFillLight = max(dot(normal, fillLight), 0.0) * 0.24;
+      v_light = ambientLight + directionalLight + cityFillLight;
       v_color = a_color;
       gl_Position = u_matrix * vec4(a_position, 1.0);
     }
@@ -614,7 +622,9 @@ function setupXRRenderer() {
 
     void main() {
       vec4 color = u_color * v_color;
-      vec3 displayColor = pow(clamp(color.rgb * v_light, 0.0, 1.0), vec3(1.0 / 2.2));
+      vec3 cityEnvironment = vec3(0.08, 0.1, 0.14);
+      vec3 litColor = color.rgb * v_light + cityEnvironment * 0.18;
+      vec3 displayColor = pow(clamp(litColor, 0.0, 1.0), vec3(1.0 / 2.2));
       gl_FragColor = vec4(displayColor, color.a * u_alpha);
     }
   `);
@@ -815,7 +825,7 @@ function getXRModelBounds(primitives) {
       (min[1] + max[1]) / 2,
       (min[2] + max[2]) / 2
     ],
-    scale: 1 / longestSide
+    scale: XR_NORMALIZED_MODEL_SIZE / longestSide
   };
 }
 
@@ -909,6 +919,7 @@ function onXRFrame(time, frame) {
   xrLastViewProjection = multiplyMat4(view.projectionMatrix, view.transform.inverse.matrix);
 
   expireXRObjects(time);
+  updateXRHoverStates();
 
   for (const xrView of pose.views) {
     const viewport = layer.getViewport(xrView);
@@ -935,20 +946,21 @@ function renderXRObjects(view) {
     if (object.caught) return;
 
     let alpha = 1;
-    let scale = 1;
+    object.hoverScale = object.hoverScale || 1;
+    let scale = object.hoverScale;
 
     if (object.catching) {
       const t = clamp((now - object.catchStartAt) / XR_CATCH_ANIM_MS, 0, 1);
       alpha = 1 - t;
-      scale = 1;
+      scale = object.hoverScale;
     } else if (object.expiring) {
       const t = clamp((now - object.expireStartedAt) / XR_EXPIRE_MS, 0, 1);
       alpha = 1 - t;
-      scale = 1;
+      scale = object.hoverScale;
     } else if (object.fadeIn) {
       const t = clamp((now - object.fadeInStart) / XR_FADEIN_MS, 0, 1);
       alpha = t;
-      scale = 1;
+      scale = object.hoverScale;
       if (t >= 1) object.fadeIn = false;
     }
 
@@ -1195,6 +1207,19 @@ function getActiveXRObjectCount() {
   return xrObjects.filter((object) => !object.caught && !object.catching && !object.expiring).length;
 }
 
+function updateXRHoverStates() {
+  if (!xrLastViewProjection) return;
+
+  const hoveredObject = getXRAimedObject(XR_HOVER_RADIUS);
+
+  xrObjects.forEach((object) => {
+    if (object.caught || object.catching || object.expiring) return;
+
+    const targetScale = object === hoveredObject ? XR_HOVER_SCALE : 1;
+    object.hoverScale = (object.hoverScale || 1) + (targetScale - (object.hoverScale || 1)) * XR_HOVER_SMOOTHING;
+  });
+}
+
 function getVisibleXRObjectCount() {
   return xrObjects.filter((object) => !object.caught && !object.catching && !object.expiring && isXRObjectInView(object)).length;
 }
@@ -1209,11 +1234,22 @@ function isXRObjectInView(object) {
 function catchXRObjectByMarker() {
   if (!xrActive || !xrLastViewProjection) return false;
 
+  const object = getXRAimedObject(0.22);
+
+  if (!object) {
+    showMissEffect();
+    return true;
+  }
+
+  collectXRObject(object);
+  return true;
+}
+
+function getXRAimedObject(radius) {
   let closest = null;
   let closestDist = Infinity;
   let closestTarget = null;
   let closestTargetDist = Infinity;
-  const radius = 0.22;
 
   xrObjects.forEach((object) => {
     if (object.caught || object.catching || object.expiring) return;
@@ -1235,15 +1271,7 @@ function catchXRObjectByMarker() {
     }
   });
 
-  const object = closestTarget || closest;
-
-  if (!object) {
-    showMissEffect();
-    return true;
-  }
-
-  collectXRObject(object);
-  return true;
+  return closestTarget || closest;
 }
 
 function collectXRObject(object) {
