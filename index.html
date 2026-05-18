@@ -2,8 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover"
+  />
+
   <title>Green Chili Hunt</title>
+
   <link rel="stylesheet" href="css/main.css" />
   <link rel="stylesheet" href="css/hud.css" />
 </head>
@@ -32,12 +38,12 @@
 
       <div class="timer-card">
         <span class="hud-label">TIME</span>
-        <span id="timerText" class="timer-value">0s</span>
+        <span id="timerText" class="timer-value">0</span>
       </div>
     </div>
 
     <!-- TARGET MARKER -->
-    <div class="aim-area" onclick="window.dispatchEvent(new CustomEvent('try-catch'))">
+    <div class="aim-area">
       <div class="aim-circle"></div>
       <div class="aim-dot"></div>
       <div class="scan-line"></div>
@@ -58,7 +64,11 @@
     <div class="intro-card">
 
       <div class="logo-badge">
-        <img src="assets/images/chili-green.png" alt="Green Chili" class="logo-image" />
+        <img
+          src="assets/images/chili-green.png"
+          alt="Green Chili"
+          class="logo-image"
+        />
       </div>
 
       <h1>Green Chili Hunt</h1>
@@ -71,6 +81,7 @@
 
       <div class="how-to-box">
         <h3>Cara Bermain</h3>
+
         <ul>
           <li>Gunakan Chrome di Android yang mendukung ARCore.</li>
           <li>Izinkan akses AR camera dan mikrofon.</li>
@@ -94,14 +105,18 @@
     <div class="result-card">
 
       <div class="logo-badge">
-        <img src="assets/images/chili-green.png" alt="Green Chili" class="logo-image" />
+        <img
+          src="assets/images/chili-green.png"
+          alt="Green Chili"
+          class="logo-image"
+        />
       </div>
 
       <h1>Challenge Complete!</h1>
 
       <p class="result-label">Time to collect 5 chilies</p>
 
-      <div id="finalScoreText" class="final-score">0s</div>
+      <div id="finalScoreText" class="final-score">0</div>
 
       <div id="topFiveInfo" class="top-five-info hidden">
         Score saved to leaderboard
@@ -146,13 +161,31 @@
       <h2>Save Your Score</h2>
 
       <p class="modal-score-label">Your Score</p>
-      <div id="modalScoreText" class="modal-score-value">0s</div>
+      <div id="modalScoreText" class="modal-score-value">0</div>
 
-      <label class="name-label" for="playerNameInput">Your Name</label>
-      <input id="playerNameInput" class="name-input" type="text" maxlength="100" placeholder="Enter your name" />
+      <label class="name-label" for="playerNameInput">
+        Your Name
+      </label>
 
-      <label class="name-label email-label" for="playerEmailInput">Your Email</label>
-      <input id="playerEmailInput" class="name-input" type="email" maxlength="150" placeholder="Enter your email" />
+      <input
+        id="playerNameInput"
+        class="name-input"
+        type="text"
+        maxlength="100"
+        placeholder="Enter your name"
+      />
+
+      <label class="name-label email-label" for="playerEmailInput">
+        Your Email
+      </label>
+
+      <input
+        id="playerEmailInput"
+        class="name-input"
+        type="email"
+        maxlength="150"
+        placeholder="Enter your email"
+      />
 
       <p class="email-note">
         Please use a valid email. This email will be used for score redemption.
@@ -160,8 +193,13 @@
 
       <div id="saveMessage" class="save-message"></div>
 
-      <button id="submitScoreBtn" class="primary-btn">Save</button>
-      <button id="closeSaveModalBtn" class="secondary-btn">Cancel</button>
+      <button id="submitScoreBtn" class="primary-btn">
+        Save
+      </button>
+
+      <button id="closeSaveModalBtn" class="secondary-btn">
+        Cancel
+      </button>
     </div>
   </div>
 
