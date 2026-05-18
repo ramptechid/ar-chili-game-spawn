@@ -1,3 +1,6 @@
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
 /* =========================
    API CONFIG
 ========================= */
@@ -134,9 +137,6 @@ const XR_EXPIRE_MS = 520;
 const XR_EXPIRE_STAGGER_MIN = 520;
 const XR_EXPIRE_STAGGER_MAX = 1250;
 const XR_NORMALIZED_MODEL_SIZE = 3.0;
-const XR_MATERIAL_EXPOSURE = 2.0;
-const XR_MATERIAL_MIN_COLOR = 0.42;
-const XR_MATERIAL_BLACK_FLOOR = 0.08;
 const CHILI_SIZE_MIN = 34;
 const CHILI_SIZE_MAX = 82;
 const WORLD_RANGE_H = 24;
@@ -250,21 +250,25 @@ let nextChiliExpireAt = 0;
 
 let cameraStarted = false;
 let cameraStream = null;
+
+// Three.js / WebXR state
+let threeRenderer = null;
+let threeScene = null;
+let threeCamera = null;
+const gltfLoader = new GLTFLoader();
+
 let xrActive = false;
 let xrSession = null;
-let xrRefSpace = null;
-let xrGl = null;
-let xrProgram = null;
 let xrModels = new Map();
 let xrObjects = [];
-let xrLastPose = null;
-let xrLastView = null;
-let xrLastViewProjection = null;
+let xrLastCamera = null;
 let xrLastRefillAt = 0;
 let xrSpawnInterval = null;
 let xrSpawnTimeout = null;
 let xrInitialSpawnTimeouts = [];
 let nextXRExpireAt = 0;
+
+// Voice state
 let voiceActive = false;
 let voiceStream = null;
 let voiceRecognition = null;
@@ -522,55 +526,46 @@ function stopCamera() {
 }
 
 /* =========================
-   WEBXR AR
+   WEBXR AR (Three.js)
 ========================= */
 
 async function startXRSession() {
   if (!navigator.xr || !xrCanvas) return false;
 
   try {
-    if (!xrGl) {
-      xrGl = xrCanvas.getContext("webgl", {
-        xrCompatible: true,
+    // Create renderer once and reuse across sessions
+    if (!threeRenderer) {
+      threeRenderer = new THREE.WebGLRenderer({
+        canvas: xrCanvas,
         alpha: true,
-        antialias: false,
-        depth: true
+        antialias: true
       });
+      threeRenderer.setPixelRatio(window.devicePixelRatio);
+      threeRenderer.xr.enabled = true;
     }
 
-    if (!xrGl) return false;
+    // Fresh scene each session
+    threeScene = new THREE.Scene();
+    threeCamera = new THREE.PerspectiveCamera(
+      70,
+      window.innerWidth / window.innerHeight,
+      0.01,
+      20
+    );
 
-    xrCanvas.addEventListener("webglcontextlost", (e) => {
-      e.preventDefault();
-      xrModels.clear();
-    }, { once: true });
+    setupThreeLighting();
 
     xrSession = await navigator.xr.requestSession("immersive-ar", {
       optionalFeatures: ["dom-overlay", "local-floor"],
-      domOverlay: {
-        root: document.body
-      }
+      domOverlay: { root: document.body }
     });
 
-    await xrGl.makeXRCompatible();
-    xrSession.updateRenderState({
-      baseLayer: new XRWebGLLayer(xrSession, xrGl, {
-        alpha: true,
-        antialias: false,
-        depth: true
-      })
-    });
+    await threeRenderer.xr.setSession(xrSession);
 
-    try {
-      xrRefSpace = await xrSession.requestReferenceSpace("local-floor");
-    } catch {
-      xrRefSpace = await xrSession.requestReferenceSpace("local");
-    }
-
-    setupXRRenderer();
     await loadXRModels();
 
     xrObjects = [];
+    xrLastCamera = null;
     xrActive = true;
     document.body.classList.add("xr-mode");
 
@@ -579,7 +574,7 @@ async function startXRSession() {
       if (gameRunning) endGame();
     });
 
-    xrSession.requestAnimationFrame(onXRFrame);
+    threeRenderer.setAnimationLoop(onXRFrame);
     return true;
   } catch (error) {
     console.warn("WebXR AR unavailable:", error.name, error.message);
@@ -588,60 +583,20 @@ async function startXRSession() {
   }
 }
 
-function setupXRRenderer() {
-  const vertexShader = createXRShader(xrGl.VERTEX_SHADER, `
-    attribute vec3 a_position;
-    attribute vec3 a_normal;
-    attribute vec4 a_color;
-    uniform mat4 u_matrix;
-    uniform mat4 u_model;
-    varying float v_light;
-    varying vec4 v_color;
+function setupThreeLighting() {
+  // Ambient fill — keeps dark-side faces visible
+  const ambientLight = new THREE.AmbientLight(0xffffff, 2.0);
+  threeScene.add(ambientLight);
 
-    void main() {
-      vec3 normal = normalize(mat3(u_model) * a_normal);
-      vec3 keyLight = normalize(vec3(0.35, 0.9, 0.45));
-      vec3 fillLight = normalize(vec3(-0.55, 0.45, -0.25));
-      float ambientLight = 1.15;
-      float directionalLight = max(dot(normal, keyLight), 0.0) * 0.58;
-      float cityFillLight = max(dot(normal, fillLight), 0.0) * 0.24;
-      v_light = ambientLight + directionalLight + cityFillLight;
-      v_color = a_color;
-      gl_Position = u_matrix * vec4(a_position, 1.0);
-    }
-  `);
-  const fragmentShader = createXRShader(xrGl.FRAGMENT_SHADER, `
-    precision mediump float;
-    uniform vec4 u_color;
-    uniform float u_alpha;
-    varying float v_light;
-    varying vec4 v_color;
+  // Key light from upper-right — matches original vertex shader key direction
+  const keyLight = new THREE.DirectionalLight(0xffffff, 2.5);
+  keyLight.position.set(0.35, 0.9, 0.45);
+  threeScene.add(keyLight);
 
-    void main() {
-      vec4 color = u_color * v_color;
-      vec3 cityEnvironment = vec3(0.08, 0.1, 0.14);
-      vec3 litColor = color.rgb * v_light + cityEnvironment * 0.18;
-      vec3 displayColor = pow(clamp(litColor, 0.0, 1.0), vec3(1.0 / 2.2));
-      gl_FragColor = vec4(displayColor, color.a * u_alpha);
-    }
-  `);
-
-  xrProgram = xrGl.createProgram();
-  xrGl.attachShader(xrProgram, vertexShader);
-  xrGl.attachShader(xrProgram, fragmentShader);
-  xrGl.linkProgram(xrProgram);
-
-  xrGl.enable(xrGl.DEPTH_TEST);
-  xrGl.depthFunc(xrGl.LEQUAL);
-  xrGl.enable(xrGl.BLEND);
-  xrGl.blendFunc(xrGl.SRC_ALPHA, xrGl.ONE_MINUS_SRC_ALPHA);
-}
-
-function createXRShader(type, source) {
-  const shader = xrGl.createShader(type);
-  xrGl.shaderSource(shader, source);
-  xrGl.compileShader(shader);
-  return shader;
+  // Fill light from left — softens shadows, equivalent to original fill term
+  const fillLight = new THREE.DirectionalLight(0xffffff, 1.0);
+  fillLight.position.set(-0.55, 0.45, -0.25);
+  threeScene.add(fillLight);
 }
 
 async function loadXRModels() {
@@ -652,413 +607,131 @@ async function loadXRModels() {
 async function loadXRModel(src) {
   if (xrModels.has(src)) return xrModels.get(src);
 
-  const response = await fetch(src);
-  if (!response.ok) {
-    throw new Error(`Unable to load 3D model: ${src}`);
-  }
+  return new Promise((resolve, reject) => {
+    gltfLoader.load(src, (gltf) => {
+      const model = gltf.scene;
 
-  const model = createXRModelFromGlb(await response.arrayBuffer());
-  xrModels.set(src, model);
-  return model;
-}
+      // Normalize longest dimension to XR_NORMALIZED_MODEL_SIZE
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z, 0.0001);
+      model.scale.multiplyScalar(XR_NORMALIZED_MODEL_SIZE / maxDim);
 
-function createXRModelFromGlb(arrayBuffer) {
-  const dataView = new DataView(arrayBuffer);
-  const magic = dataView.getUint32(0, true);
-  if (magic !== 0x46546c67) {
-    throw new Error("Invalid GLB file.");
-  }
+      // Center the model at origin
+      box.setFromObject(model);
+      const center = box.getCenter(new THREE.Vector3());
+      model.position.sub(center);
 
-  let offset = 12;
-  let json = null;
-  let bin = null;
-
-  while (offset < arrayBuffer.byteLength) {
-    const chunkLength = dataView.getUint32(offset, true);
-    const chunkType = dataView.getUint32(offset + 4, true);
-    const chunkStart = offset + 8;
-    const chunk = arrayBuffer.slice(chunkStart, chunkStart + chunkLength);
-
-    if (chunkType === 0x4e4f534a) {
-      json = JSON.parse(new TextDecoder().decode(chunk).trim());
-    } else if (chunkType === 0x004e4942) {
-      bin = chunk;
-    }
-
-    offset = chunkStart + chunkLength;
-  }
-
-  if (!json || !bin) {
-    throw new Error("GLB is missing JSON or binary data.");
-  }
-
-  const materials = (json.materials || []).map((material) => {
-    return getXRMaterialColor(material);
-  });
-
-  const primitives = [];
-  const parsedPrimitives = [];
-
-  (json.meshes || []).forEach((mesh) => {
-    (mesh.primitives || []).forEach((primitive) => {
-      const positions = readGlbAccessor(json, bin, primitive.attributes.POSITION);
-      const normals = primitive.attributes.NORMAL !== undefined
-        ? readGlbAccessor(json, bin, primitive.attributes.NORMAL)
-        : new Float32Array(positions.length);
-      const colors = primitive.attributes.COLOR_0 !== undefined
-        ? readGlbAccessorInfo(json, bin, primitive.attributes.COLOR_0)
-        : null;
-      const indices = primitive.indices !== undefined
-        ? readGlbAccessor(json, bin, primitive.indices)
-        : null;
-
-      parsedPrimitives.push({
-        positions,
-        normals,
-        colors,
-        indices,
-        material: primitive.material
+      // Pre-enable transparency so fade animations work on clones
+      model.traverse((child) => {
+        if (!child.isMesh) return;
+        const mats = Array.isArray(child.material)
+          ? child.material
+          : [child.material];
+        mats.forEach((mat) => { mat.transparent = true; });
       });
-    });
+
+      const group = new THREE.Group();
+      group.add(model);
+      xrModels.set(src, group);
+      resolve(group);
+    }, undefined, reject);
   });
-
-  const bounds = getXRModelBounds(parsedPrimitives);
-
-  parsedPrimitives.forEach((primitive) => {
-    const positions = normalizeXRPositions(primitive.positions, bounds);
-    const positionBuffer = xrGl.createBuffer();
-    xrGl.bindBuffer(xrGl.ARRAY_BUFFER, positionBuffer);
-    xrGl.bufferData(xrGl.ARRAY_BUFFER, positions, xrGl.STATIC_DRAW);
-
-    const normalBuffer = xrGl.createBuffer();
-    xrGl.bindBuffer(xrGl.ARRAY_BUFFER, normalBuffer);
-    xrGl.bufferData(xrGl.ARRAY_BUFFER, primitive.normals, xrGl.STATIC_DRAW);
-
-    let colorBuffer = null;
-    if (primitive.colors) {
-      colorBuffer = xrGl.createBuffer();
-      xrGl.bindBuffer(xrGl.ARRAY_BUFFER, colorBuffer);
-      xrGl.bufferData(xrGl.ARRAY_BUFFER, primitive.colors.values, xrGl.STATIC_DRAW);
-    }
-
-    let indexBuffer = null;
-    if (primitive.indices) {
-      indexBuffer = xrGl.createBuffer();
-      xrGl.bindBuffer(xrGl.ELEMENT_ARRAY_BUFFER, indexBuffer);
-      xrGl.bufferData(xrGl.ELEMENT_ARRAY_BUFFER, primitive.indices, xrGl.STATIC_DRAW);
-    }
-
-    primitives.push({
-      positionBuffer,
-      normalBuffer,
-      colorBuffer,
-      colorComponentCount: primitive.colors?.componentCount || 4,
-      colorComponentType: primitive.colors ? getXRAttributeType(primitive.colors.values) : xrGl.FLOAT,
-      colorNormalized: primitive.colors?.normalized || false,
-      indexBuffer,
-      indexType: getXRIndexType(primitive.indices),
-      count: primitive.indices ? primitive.indices.length : positions.length / 3,
-      color: materials[primitive.material] || new Float32Array([0.85, 1, 0.45, 1])
-    });
-  });
-
-  return { primitives };
-}
-
-function getXRMaterialColor(material) {
-  const factor = material?.pbrMetallicRoughness?.baseColorFactor || [1, 1, 1, 1];
-  const color = [
-    factor[0] ?? 1,
-    factor[1] ?? 1,
-    factor[2] ?? 1
-  ].map((channel) => clamp(channel * XR_MATERIAL_EXPOSURE, 0, 1));
-  const alpha = factor[3] ?? 1;
-  const maxChannel = Math.max(color[0], color[1], color[2]);
-
-  if (maxChannel <= 0.001) {
-    return new Float32Array([
-      XR_MATERIAL_BLACK_FLOOR,
-      XR_MATERIAL_BLACK_FLOOR,
-      XR_MATERIAL_BLACK_FLOOR,
-      alpha
-    ]);
-  }
-
-  if (maxChannel < XR_MATERIAL_MIN_COLOR) {
-    const boost = XR_MATERIAL_MIN_COLOR / maxChannel;
-    color[0] = clamp(color[0] * boost, 0, 1);
-    color[1] = clamp(color[1] * boost, 0, 1);
-    color[2] = clamp(color[2] * boost, 0, 1);
-  }
-
-  return new Float32Array([color[0], color[1], color[2], alpha]);
-}
-
-function getXRModelBounds(primitives) {
-  const min = [Infinity, Infinity, Infinity];
-  const max = [-Infinity, -Infinity, -Infinity];
-
-  primitives.forEach((primitive) => {
-    for (let i = 0; i < primitive.positions.length; i += 3) {
-      min[0] = Math.min(min[0], primitive.positions[i]);
-      min[1] = Math.min(min[1], primitive.positions[i + 1]);
-      min[2] = Math.min(min[2], primitive.positions[i + 2]);
-      max[0] = Math.max(max[0], primitive.positions[i]);
-      max[1] = Math.max(max[1], primitive.positions[i + 1]);
-      max[2] = Math.max(max[2], primitive.positions[i + 2]);
-    }
-  });
-
-  const size = [
-    max[0] - min[0],
-    max[1] - min[1],
-    max[2] - min[2]
-  ];
-  const longestSide = Math.max(size[0], size[1], size[2], 0.0001);
-
-  return {
-    center: [
-      (min[0] + max[0]) / 2,
-      (min[1] + max[1]) / 2,
-      (min[2] + max[2]) / 2
-    ],
-    scale: XR_NORMALIZED_MODEL_SIZE / longestSide
-  };
-}
-
-function normalizeXRPositions(positions, bounds) {
-  const normalized = new Float32Array(positions.length);
-
-  for (let i = 0; i < positions.length; i += 3) {
-    normalized[i] = (positions[i] - bounds.center[0]) * bounds.scale;
-    normalized[i + 1] = (positions[i + 1] - bounds.center[1]) * bounds.scale;
-    normalized[i + 2] = (positions[i + 2] - bounds.center[2]) * bounds.scale;
-  }
-
-  return normalized;
-}
-
-function getXRIndexType(indices) {
-  if (!indices) return xrGl.UNSIGNED_SHORT;
-  if (indices instanceof Uint32Array) return xrGl.UNSIGNED_INT;
-  if (indices instanceof Uint8Array) return xrGl.UNSIGNED_BYTE;
-  return xrGl.UNSIGNED_SHORT;
-}
-
-function getXRAttributeType(values) {
-  if (values instanceof Float32Array) return xrGl.FLOAT;
-  if (values instanceof Uint8Array) return xrGl.UNSIGNED_BYTE;
-  if (values instanceof Int8Array) return xrGl.BYTE;
-  if (values instanceof Uint16Array) return xrGl.UNSIGNED_SHORT;
-  if (values instanceof Int16Array) return xrGl.SHORT;
-  return xrGl.FLOAT;
-}
-
-function readGlbAccessor(json, bin, accessorIndex) {
-  return readGlbAccessorInfo(json, bin, accessorIndex).values;
-}
-
-function readGlbAccessorInfo(json, bin, accessorIndex) {
-  const accessor = json.accessors[accessorIndex];
-  const bufferView = json.bufferViews[accessor.bufferView];
-  const componentCount = getGlbAccessorComponentCount(accessor.type);
-  const TypedArray = getGlbAccessorArrayType(accessor.componentType);
-  const byteOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0);
-  const length = accessor.count * componentCount;
-
-  return {
-    values: new TypedArray(bin, byteOffset, length),
-    componentCount,
-    componentType: accessor.componentType,
-    normalized: !!accessor.normalized
-  };
-}
-
-function getGlbAccessorComponentCount(type) {
-  switch (type) {
-    case "SCALAR": return 1;
-    case "VEC2": return 2;
-    case "VEC3": return 3;
-    case "VEC4": return 4;
-    default: throw new Error(`Unsupported GLB accessor type: ${type}`);
-  }
-}
-
-function getGlbAccessorArrayType(componentType) {
-  switch (componentType) {
-    case 5120: return Int8Array;
-    case 5121: return Uint8Array;
-    case 5122: return Int16Array;
-    case 5123: return Uint16Array;
-    case 5125: return Uint32Array;
-    case 5126: return Float32Array;
-    default: throw new Error(`Unsupported GLB component type: ${componentType}`);
-  }
 }
 
 function onXRFrame(time, frame) {
-  if (!xrSession || !xrRefSpace) return;
+  if (!xrActive || !frame) return;
 
-  xrSession.requestAnimationFrame(onXRFrame);
-
-  const pose = frame.getViewerPose(xrRefSpace);
-  if (!pose) return;
-
-  xrLastPose = pose;
-
-  const layer = xrSession.renderState.baseLayer;
-  xrGl.bindFramebuffer(xrGl.FRAMEBUFFER, layer.framebuffer);
-  xrGl.clearColor(0, 0, 0, 0);
-  xrGl.clear(xrGl.COLOR_BUFFER_BIT | xrGl.DEPTH_BUFFER_BIT);
-
-  const view = pose.views[0];
-  xrLastView = view;
-  xrLastViewProjection = multiplyMat4(view.projectionMatrix, view.transform.inverse.matrix);
-
+  updateXRObjectAnimations();
   expireXRObjects(time);
 
-  for (const xrView of pose.views) {
-    const viewport = layer.getViewport(xrView);
-    xrGl.viewport(viewport.x, viewport.y, viewport.width, viewport.height);
-    renderXRObjects(xrView);
-  }
+  threeRenderer.render(threeScene, threeCamera);
+
+  // Cache after render — Three.js updates the XR camera inside renderer.render()
+  xrLastCamera = threeRenderer.xr.getCamera();
 }
 
-function renderXRObjects(view) {
-  xrGl.useProgram(xrProgram);
-
-  const positionLocation = xrGl.getAttribLocation(xrProgram, "a_position");
-  const normalLocation = xrGl.getAttribLocation(xrProgram, "a_normal");
-  const vertexColorLocation = xrGl.getAttribLocation(xrProgram, "a_color");
-
-  const matrixLocation = xrGl.getUniformLocation(xrProgram, "u_matrix");
-  const modelLocation = xrGl.getUniformLocation(xrProgram, "u_model");
-  const alphaLocation = xrGl.getUniformLocation(xrProgram, "u_alpha");
-  const colorLocation = xrGl.getUniformLocation(xrProgram, "u_color");
-  const viewProjection = multiplyMat4(view.projectionMatrix, view.transform.inverse.matrix);
+function updateXRObjectAnimations() {
   const now = performance.now();
 
   xrObjects.forEach((object) => {
     if (object.caught) return;
 
     let alpha = 1;
-    let scale = 1;
 
     if (object.catching) {
       const t = clamp((now - object.catchStartAt) / XR_CATCH_ANIM_MS, 0, 1);
       alpha = 1 - t;
-      scale = 1;
     } else if (object.expiring) {
       const t = clamp((now - object.expireStartedAt) / XR_EXPIRE_MS, 0, 1);
       alpha = 1 - t;
-      scale = 1;
     } else if (object.fadeIn) {
       const t = clamp((now - object.fadeInStart) / XR_FADEIN_MS, 0, 1);
       alpha = t;
-      scale = 1;
       if (t >= 1) object.fadeIn = false;
     }
 
-    if (alpha <= 0.01) return;
-
-    const modelMatrix = makeXRObjectMatrix(object, scale);
-    const matrix = multiplyMat4(viewProjection, modelMatrix);
-    const model = xrModels.get(object.asset.modelSrc);
-    if (!model) return;
-
-    xrGl.uniform1f(alphaLocation, alpha);
-    xrGl.uniformMatrix4fv(matrixLocation, false, matrix);
-    xrGl.uniformMatrix4fv(modelLocation, false, modelMatrix);
-
-    model.primitives.forEach((primitive) => {
-      xrGl.bindBuffer(xrGl.ARRAY_BUFFER, primitive.positionBuffer);
-      xrGl.enableVertexAttribArray(positionLocation);
-      xrGl.vertexAttribPointer(positionLocation, 3, xrGl.FLOAT, false, 0, 0);
-
-      xrGl.bindBuffer(xrGl.ARRAY_BUFFER, primitive.normalBuffer);
-      xrGl.enableVertexAttribArray(normalLocation);
-      xrGl.vertexAttribPointer(normalLocation, 3, xrGl.FLOAT, false, 0, 0);
-
-      if (primitive.colorBuffer) {
-        xrGl.bindBuffer(xrGl.ARRAY_BUFFER, primitive.colorBuffer);
-        xrGl.enableVertexAttribArray(vertexColorLocation);
-        xrGl.vertexAttribPointer(
-          vertexColorLocation,
-          primitive.colorComponentCount,
-          primitive.colorComponentType,
-          primitive.colorNormalized,
-          0,
-          0
-        );
-      } else {
-        xrGl.disableVertexAttribArray(vertexColorLocation);
-        xrGl.vertexAttrib4f(vertexColorLocation, 1, 1, 1, 1);
-      }
-
-      xrGl.uniform4fv(colorLocation, primitive.color);
-
-      if (primitive.indexBuffer) {
-        xrGl.bindBuffer(xrGl.ELEMENT_ARRAY_BUFFER, primitive.indexBuffer);
-        xrGl.drawElements(xrGl.TRIANGLES, primitive.count, primitive.indexType, 0);
-      } else {
-        xrGl.drawArrays(xrGl.TRIANGLES, 0, primitive.count);
-      }
-    });
+    if (!object.mesh) return;
+    object.mesh.visible = alpha > 0.01;
+    if (object.mesh.visible) setObjectOpacity(object.mesh, alpha);
   });
 }
 
-function runXRSpawner() {
-  clearInterval(xrSpawnInterval);
-  clearTimeout(xrSpawnTimeout);
-  xrInitialSpawnTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
-  xrSpawnInterval = null;
-  xrSpawnTimeout = null;
-  xrInitialSpawnTimeouts = [];
-
-  let initialDelay = 350;
-
-  for (let i = 0; i < XR_INITIAL_OBJECTS; i++) {
-    const timeoutId = setTimeout(() => {
-      xrInitialSpawnTimeouts = xrInitialSpawnTimeouts.filter((id) => id !== timeoutId);
-      if (gameRunning && xrActive) spawnXRObject(false);
-    }, initialDelay);
-    xrInitialSpawnTimeouts.push(timeoutId);
-
-    initialDelay += randomNumber(XR_INITIAL_SPAWN_DELAY_MIN, XR_INITIAL_SPAWN_DELAY_MAX);
-  }
-
-  scheduleNextXRSpawn(initialDelay + randomNumber(600, 1100));
-}
-
-function scheduleNextXRSpawn(delay = randomNumber(XR_SPAWN_DELAY_MIN, XR_SPAWN_DELAY_MAX)) {
-  clearTimeout(xrSpawnTimeout);
-
-  xrSpawnTimeout = setTimeout(() => {
-    xrSpawnTimeout = null;
-
-    if (gameRunning && xrActive && getActiveXRObjectCount() < XR_MAX_ACTIVE_OBJECTS) {
-      spawnXRObject(false);
-    }
-
-    if (gameRunning && xrActive) {
-      scheduleNextXRSpawn();
-    }
-  }, delay);
+function setObjectOpacity(obj, alpha) {
+  obj.traverse((child) => {
+    if (!child.isMesh) return;
+    const mats = Array.isArray(child.material)
+      ? child.material
+      : [child.material];
+    mats.forEach((mat) => { mat.opacity = alpha; });
+  });
 }
 
 function spawnXRObject(nearView = false) {
-  if (!xrLastPose || getActiveXRObjectCount() >= XR_MAX_ACTIVE_OBJECTS) return;
+  if (!xrLastCamera || getActiveXRObjectCount() >= XR_MAX_ACTIVE_OBJECTS) return;
 
   const asset = getSpawnAssetXR();
-  const cameraMatrix = xrLastPose.transform.matrix;
+
+  // Pull camera position and orientation from Three.js matrix (column-major)
+  const cameraMatrix = xrLastCamera.matrixWorld.elements;
   const cameraPosition = [cameraMatrix[12], cameraMatrix[13], cameraMatrix[14]];
 
   const spawnPose = getXRSpawnPose(cameraMatrix, cameraPosition, nearView);
   if (!spawnPose) return;
 
+  const templateGroup = xrModels.get(asset.modelSrc);
+  if (!templateGroup) return;
+
+  // Deep-clone the template and give each mesh its own cloned material
+  const mesh = templateGroup.clone(true);
+  mesh.traverse((child) => {
+    if (!child.isMesh) return;
+    if (Array.isArray(child.material)) {
+      child.material = child.material.map((m) => {
+        const c = m.clone();
+        c.transparent = true;
+        c.opacity = 0;
+        return c;
+      });
+    } else {
+      child.material = child.material.clone();
+      child.material.transparent = true;
+      child.material.opacity = 0;
+    }
+  });
+
   const size = randF(XR_SIZE_MIN, XR_SIZE_MAX);
+  mesh.scale.setScalar(size);
+  mesh.position.set(
+    spawnPose.position[0],
+    spawnPose.position[1],
+    spawnPose.position[2]
+  );
+  mesh.rotation.y = spawnPose.yaw;
+
+  threeScene.add(mesh);
+
   const now = performance.now();
-  // Position is fully anchored in world space after spawn.
   xrObjects.push({
     asset,
     isTarget: !!asset.isTarget,
@@ -1071,7 +744,8 @@ function spawnXRObject(nearView = false) {
     catching: false,
     expiring: false,
     fadeIn: true,
-    fadeInStart: now
+    fadeInStart: now,
+    mesh
   });
 }
 
@@ -1129,7 +803,9 @@ function getHorizontalCameraForward(cameraMatrix) {
 }
 
 function getNearestXRObjectDistance(position) {
-  const activeObjects = xrObjects.filter((object) => !object.caught && !object.catching && !object.expiring);
+  const activeObjects = xrObjects.filter(
+    (o) => !o.caught && !o.catching && !o.expiring
+  );
 
   if (activeObjects.length === 0) return Infinity;
 
@@ -1143,7 +819,9 @@ function getNearestXRObjectDistance(position) {
 
 function getSpawnAssetXR() {
   const activeCount = getActiveXRObjectCount();
-  const targetCount = xrObjects.filter((object) => object.isTarget && !object.caught && !object.catching && !object.expiring).length;
+  const targetCount = xrObjects.filter(
+    (o) => o.isTarget && !o.caught && !o.catching && !o.expiring
+  ).length;
 
   if (DECOY_ASSETS.length === 0 || shouldSpawnTargetAssetXR(activeCount, targetCount)) {
     return TARGET_ASSET;
@@ -1170,7 +848,13 @@ function expireXRObjects(time) {
 
   if (now >= nextXRExpireAt) {
     const nextExpiredObject = xrObjects
-      .filter((object) => !object.caught && !object.catching && !object.expiring && now - object.createdAt >= object.lifetime)
+      .filter(
+        (o) =>
+          !o.caught &&
+          !o.catching &&
+          !o.expiring &&
+          now - o.createdAt >= o.lifetime
+      )
       .sort((a, b) => (a.createdAt + a.lifetime) - (b.createdAt + b.lifetime))[0];
 
     if (nextExpiredObject) {
@@ -1180,12 +864,25 @@ function expireXRObjects(time) {
     }
   }
 
-  xrObjects = xrObjects.filter((object) => {
-    if (object.caught) return false;
-    if (object.catching) return performance.now() - object.catchStartAt < XR_CATCH_ANIM_MS + 60;
-    if (object.expiring) return performance.now() - object.expireStartedAt < XR_EXPIRE_MS + 60;
-    return true;
+  const surviving = [];
+  xrObjects.forEach((object) => {
+    let keep = true;
+    if (object.caught) {
+      keep = false;
+    } else if (object.catching && now - object.catchStartAt >= XR_CATCH_ANIM_MS + 60) {
+      keep = false;
+    } else if (object.expiring && now - object.expireStartedAt >= XR_EXPIRE_MS + 60) {
+      keep = false;
+    }
+
+    if (!keep) {
+      if (object.mesh && threeScene) threeScene.remove(object.mesh);
+    } else {
+      surviving.push(object);
+    }
   });
+
+  xrObjects = surviving;
 }
 
 function refillXRCurrentView(time) {
@@ -1197,22 +894,30 @@ function refillXRCurrentView(time) {
 }
 
 function getActiveXRObjectCount() {
-  return xrObjects.filter((object) => !object.caught && !object.catching && !object.expiring).length;
+  return xrObjects.filter((o) => !o.caught && !o.catching && !o.expiring).length;
 }
 
 function getVisibleXRObjectCount() {
-  return xrObjects.filter((object) => !object.caught && !object.catching && !object.expiring && isXRObjectInView(object)).length;
+  return xrObjects.filter(
+    (o) => !o.caught && !o.catching && !o.expiring && isXRObjectInView(o)
+  ).length;
 }
 
 function isXRObjectInView(object) {
-  if (!xrLastViewProjection) return true;
+  if (!xrLastCamera) return true;
 
-  const ndc = projectXRPoint(object.position, xrLastViewProjection);
-  return ndc && Math.abs(ndc.x) <= 1.25 && Math.abs(ndc.y) <= 1.25 && ndc.z >= -1 && ndc.z <= 1;
+  const ndc = projectXRPoint(object.position);
+  return (
+    ndc &&
+    Math.abs(ndc.x) <= 1.25 &&
+    Math.abs(ndc.y) <= 1.25 &&
+    ndc.z >= -1 &&
+    ndc.z <= 1
+  );
 }
 
 function catchXRObjectByMarker() {
-  if (!xrActive || !xrLastViewProjection) return false;
+  if (!xrActive || !xrLastCamera) return false;
 
   let closest = null;
   let closestDist = Infinity;
@@ -1223,7 +928,7 @@ function catchXRObjectByMarker() {
   xrObjects.forEach((object) => {
     if (object.caught || object.catching || object.expiring) return;
 
-    const ndc = projectXRPoint(object.position, xrLastViewProjection);
+    const ndc = projectXRPoint(object.position);
     if (!ndc || ndc.z < -1 || ndc.z > 1) return;
 
     const distance = Math.sqrt(ndc.x * ndc.x + ndc.y * ndc.y);
@@ -1273,35 +978,72 @@ function collectXRObject(object) {
   }
 }
 
-function stopXRSession(endSession = true) {
-  xrActive = false;
-  stopCamera();
+function runXRSpawner() {
   clearInterval(xrSpawnInterval);
   clearTimeout(xrSpawnTimeout);
-  xrInitialSpawnTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
+  xrInitialSpawnTimeouts.forEach((id) => clearTimeout(id));
   xrSpawnInterval = null;
   xrSpawnTimeout = null;
   xrInitialSpawnTimeouts = [];
+
+  let initialDelay = 350;
+
+  for (let i = 0; i < XR_INITIAL_OBJECTS; i++) {
+    const timeoutId = setTimeout(() => {
+      xrInitialSpawnTimeouts = xrInitialSpawnTimeouts.filter((id) => id !== timeoutId);
+      if (gameRunning && xrActive) spawnXRObject(false);
+    }, initialDelay);
+    xrInitialSpawnTimeouts.push(timeoutId);
+
+    initialDelay += randomNumber(XR_INITIAL_SPAWN_DELAY_MIN, XR_INITIAL_SPAWN_DELAY_MAX);
+  }
+
+  scheduleNextXRSpawn(initialDelay + randomNumber(600, 1100));
+}
+
+function scheduleNextXRSpawn(delay = randomNumber(XR_SPAWN_DELAY_MIN, XR_SPAWN_DELAY_MAX)) {
+  clearTimeout(xrSpawnTimeout);
+
+  xrSpawnTimeout = setTimeout(() => {
+    xrSpawnTimeout = null;
+
+    if (gameRunning && xrActive && getActiveXRObjectCount() < XR_MAX_ACTIVE_OBJECTS) {
+      spawnXRObject(false);
+    }
+
+    if (gameRunning && xrActive) {
+      scheduleNextXRSpawn();
+    }
+  }, delay);
+}
+
+function stopXRSession(endSession = true) {
+  xrActive = false;
+  stopCamera();
+
+  clearInterval(xrSpawnInterval);
+  clearTimeout(xrSpawnTimeout);
+  xrInitialSpawnTimeouts.forEach((id) => clearTimeout(id));
+  xrSpawnInterval = null;
+  xrSpawnTimeout = null;
+  xrInitialSpawnTimeouts = [];
+
+  // Remove all active meshes from scene
+  if (threeScene) {
+    xrObjects.forEach((obj) => {
+      if (obj.mesh) threeScene.remove(obj.mesh);
+    });
+  }
+
   xrObjects = [];
-  xrLastPose = null;
-  xrLastView = null;
-  xrLastViewProjection = null;
+  xrLastCamera = null;
   xrLastRefillAt = 0;
   nextXRExpireAt = 0;
+
   document.body.classList.remove("xr-mode");
 
-  if (xrGl) {
-    if (xrProgram) { xrGl.deleteProgram(xrProgram); xrProgram = null; }
-    xrModels.forEach((model) => {
-      model.primitives.forEach((primitive) => {
-        xrGl.deleteBuffer(primitive.positionBuffer);
-        xrGl.deleteBuffer(primitive.normalBuffer);
-        if (primitive.colorBuffer) xrGl.deleteBuffer(primitive.colorBuffer);
-        if (primitive.indexBuffer) xrGl.deleteBuffer(primitive.indexBuffer);
-      });
-    });
-    xrModels.clear();
-    xrGl = null;
+  if (threeRenderer) {
+    threeRenderer.setAnimationLoop(null);
   }
 
   if (xrSession && endSession) {
@@ -1309,7 +1051,6 @@ function stopXRSession(endSession = true) {
   }
 
   xrSession = null;
-  xrRefSpace = null;
 }
 
 /* =========================
@@ -2492,71 +2233,15 @@ function getDistance(x1, y1, x2, y2) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-function addVec3(a, b) {
-  return [
-    a[0] + b[0],
-    a[1] + b[1],
-    a[2] + b[2]
-  ];
-}
+// Projects a world-space point [x,y,z] to NDC using the cached XR camera.
+// Returns {x, y, z} in [-1,1] range, or null if camera not ready.
+function projectXRPoint(worldPos) {
+  if (!xrLastCamera) return null;
 
-function scaleVec3(vector, scale) {
-  return [
-    vector[0] * scale,
-    vector[1] * scale,
-    vector[2] * scale
-  ];
-}
+  const vec = new THREE.Vector3(worldPos[0], worldPos[1], worldPos[2]);
+  vec.project(xrLastCamera);
 
-function multiplyMat4(a, b) {
-  const out = new Float32Array(16);
-
-  for (let column = 0; column < 4; column++) {
-    for (let row = 0; row < 4; row++) {
-      out[column * 4 + row] =
-        a[0 * 4 + row] * b[column * 4 + 0] +
-        a[1 * 4 + row] * b[column * 4 + 1] +
-        a[2 * 4 + row] * b[column * 4 + 2] +
-        a[3 * 4 + row] * b[column * 4 + 3];
-    }
-  }
-
-  return out;
-}
-
-function makeXRObjectMatrix(object, scale = 1) {
-  const size = object.size * scale;
-  const yaw = object.yaw || 0;
-  const cos = Math.cos(yaw);
-  const sin = Math.sin(yaw);
-  const right = [cos, 0, -sin];
-  const forward = [sin, 0, cos];
-  const up = [0, 1, 0];
-
-  return new Float32Array([
-    right[0] * size, right[1] * size, right[2] * size, 0,
-    forward[0] * size, forward[1] * size, forward[2] * size, 0,
-    up[0] * size, up[1] * size, up[2] * size, 0,
-    object.position[0], object.position[1], object.position[2], 1
-  ]);
-}
-
-function projectXRPoint(point, viewProjection) {
-  const x = point[0];
-  const y = point[1];
-  const z = point[2];
-  const clipX = viewProjection[0] * x + viewProjection[4] * y + viewProjection[8] * z + viewProjection[12];
-  const clipY = viewProjection[1] * x + viewProjection[5] * y + viewProjection[9] * z + viewProjection[13];
-  const clipZ = viewProjection[2] * x + viewProjection[6] * y + viewProjection[10] * z + viewProjection[14];
-  const clipW = viewProjection[3] * x + viewProjection[7] * y + viewProjection[11] * z + viewProjection[15];
-
-  if (clipW <= 0.0001) return null;
-
-  return {
-    x: clipX / clipW,
-    y: clipY / clipW,
-    z: clipZ / clipW
-  };
+  return { x: vec.x, y: vec.y, z: vec.z };
 }
 
 function updateScoreText() {
@@ -2592,7 +2277,6 @@ function randomNumber(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-// Random float in [min, max]
 function randF(min, max) {
   return Math.random() * (max - min) + min;
 }
