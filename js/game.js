@@ -1079,16 +1079,24 @@ function stopXRSession(endSession = true) {
 
 async function startVoiceCatch() {
   if (voiceActive) return;
+
   voiceActive = true;
   lastVoiceCatchAt = 0;
+
   startSpeechCatch();
 
   try {
     voiceStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false
+      },
       video: false
     });
+
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+
     if (!AudioContextClass) return;
 
     voiceAudioContext = new AudioContextClass();
@@ -1104,6 +1112,7 @@ async function startVoiceCatch() {
 
 function startSpeechCatch() {
   const SpeechRecognitionClass = window.SpeechRecognition || window.webkitSpeechRecognition;
+
   if (!SpeechRecognitionClass) return;
 
   voiceRecognition = new SpeechRecognitionClass();
@@ -1147,6 +1156,7 @@ function startSpeechCatch() {
 
 function startShoutLoop() {
   if (!voiceAnalyser) return;
+
   const buffer = new Uint8Array(voiceAnalyser.fftSize);
 
   function loop() {
@@ -1154,23 +1164,32 @@ function startShoutLoop() {
       voiceLoopId = null;
       return;
     }
+
     voiceAnalyser.getByteTimeDomainData(buffer);
+
     let sum = 0;
     for (let i = 0; i < buffer.length; i++) {
       const value = (buffer[i] - 128) / 128;
       sum += value * value;
     }
+
     const rms = Math.sqrt(sum / buffer.length);
-    if (rms >= SHOUT_RMS_THRESHOLD) triggerVoiceCatch();
-    
+
+    if (rms >= SHOUT_RMS_THRESHOLD) {
+      triggerVoiceCatch();
+    }
+
     voiceLoopId = requestAnimationFrame(loop);
   }
+
   voiceLoopId = requestAnimationFrame(loop);
 }
 
 function triggerVoiceCatch() {
   const now = Date.now();
+
   if (!gameRunning || now - lastVoiceCatchAt < VOICE_CATCH_COOLDOWN_MS) return;
+
   lastVoiceCatchAt = now;
   catchChiliByMarker();
 }
@@ -1182,7 +1201,11 @@ function stopVoiceCatch() {
     voiceRecognition.onend = null;
     voiceRecognition.onerror = null;
     voiceRecognition.onresult = null;
-    try { voiceRecognition.stop(); } catch (error) {}
+    try {
+      voiceRecognition.stop();
+    } catch (error) {
+      // Some browsers throw if recognition is already stopped.
+    }
   }
   voiceRecognition = null;
 
@@ -1195,7 +1218,9 @@ function stopVoiceCatch() {
   }
   voiceStream = null;
 
-  if (voiceAudioContext) voiceAudioContext.close().catch(() => {});
+  if (voiceAudioContext) {
+    voiceAudioContext.close().catch(() => {});
+  }
   voiceAudioContext = null;
   voiceAnalyser = null;
 }
