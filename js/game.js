@@ -147,7 +147,7 @@ const SHOUT_RMS_THRESHOLD = 0.18;
 
 const TARGET_ASSET = {
   src: "assets/images/chili-green.png",
-  modelSrc: "assets/models/chili_green_low_poly.glb",
+  modelSrc: "assets/models/Cabe.glb",
   alt: "Green Chili",
   isTarget: true,
   minSize: 38,
@@ -157,31 +157,66 @@ const TARGET_ASSET = {
 const DECOY_ASSETS = [
   {
     src: "assets/images/bintang.png",
-    modelSrc: "assets/models/bintang_low_poly.glb",
-    alt: "Star Decoy",
+    modelSrc: "assets/models/Alarm_Clock.glb",
+    alt: "Alarm Clock Decoy",
     minSize: 34,
     maxSize: 68
   },
   {
     src: "assets/images/kotak-tinggi.png",
-    modelSrc: "assets/models/kotak_tinggi_low_poly.glb",
-    alt: "Tall Box Decoy",
+    modelSrc: "assets/models/Ball.glb",
+    alt: "Ball Decoy",
     minSize: 38,
     maxSize: 78
   },
   {
     src: "assets/images/persegi-panjang.png",
-    modelSrc: "assets/models/persegi_panjang_low_poly.glb",
-    alt: "Rectangle Decoy",
+    modelSrc: "assets/models/Barbel_3Kg.glb",
+    alt: "Barbell Decoy",
     minSize: 44,
     maxSize: 86
   },
   {
     src: "assets/images/segi-enam.png",
-    modelSrc: "assets/models/segi_enam_low_poly.glb",
-    alt: "Hexagon Decoy",
+    modelSrc: "assets/models/Bedside_Table_001.glb",
+    alt: "Bedside Table Decoy",
     minSize: 36,
     maxSize: 72
+  },
+  {
+    src: "assets/images/bintang.png",
+    modelSrc: "assets/models/Horn.glb",
+    alt: "Horn Decoy",
+    minSize: 38,
+    maxSize: 78
+  },
+  {
+    src: "assets/images/kotak-tinggi.png",
+    modelSrc: "assets/models/Plane.glb",
+    alt: "Plane Decoy",
+    minSize: 42,
+    maxSize: 82
+  },
+  {
+    src: "assets/images/persegi-panjang.png",
+    modelSrc: "assets/models/Sun_Glasses.glb",
+    alt: "Sun Glasses Decoy",
+    minSize: 44,
+    maxSize: 84
+  },
+  {
+    src: "assets/images/segi-enam.png",
+    modelSrc: "assets/models/Table.glb",
+    alt: "Table Decoy",
+    minSize: 42,
+    maxSize: 82
+  },
+  {
+    src: "assets/images/bintang.png",
+    modelSrc: "assets/models/Tea_Pot.glb",
+    alt: "Tea Pot Decoy",
+    minSize: 38,
+    maxSize: 78
   }
 ];
 
