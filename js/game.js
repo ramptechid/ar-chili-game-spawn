@@ -115,15 +115,15 @@ const XR_INITIAL_SPAWN_DELAY_MIN = 140;
 const XR_INITIAL_SPAWN_DELAY_MAX = 320;
 const XR_SPAWN_DELAY_MIN = 900;
 const XR_SPAWN_DELAY_MAX = 1700;
-const XR_LIFETIME_MIN = 30000;
-const XR_LIFETIME_MAX = 60000;
-const XR_SIZE_MIN = 0.24;
-const XR_SIZE_MAX = 0.34;
+const XR_LIFETIME_MIN = Infinity;
+const XR_LIFETIME_MAX = Infinity;
+const XR_SIZE_MIN = 0.34;
+const XR_SIZE_MAX = 0.48;
 const XR_DISTANCE_MIN = 2.4;
 const XR_DISTANCE_MAX = 5.2;
 const XR_HEIGHT_MIN = -0.4;
 const XR_HEIGHT_MAX = 0.55;
-const XR_MIN_OBJECT_SPACING = 0.68;
+const XR_MIN_OBJECT_SPACING = 0.9;
 const XR_SPAWN_ATTEMPTS = 24;
 const XR_TARGET_SPAWN_RATIO = 0.16;
 const XR_MIN_TARGET_OBJECTS = 2;
@@ -1028,11 +1028,11 @@ function spawnXRObject(nearView = false) {
     size,
     yaw: spawnPose.yaw,
     createdAt: now,
-    lifetime: randomNumber(XR_LIFETIME_MIN, XR_LIFETIME_MAX),
+    lifetime: XR_LIFETIME_MIN,
     caught: false,
     catching: false,
     expiring: false,
-    fadeIn: true,
+    fadeIn: false,
     fadeInStart: now
   });
 }
@@ -1128,6 +1128,8 @@ function shouldSpawnTargetAssetXR(activeCount, targetCount) {
 }
 
 function expireXRObjects(time) {
+  if (!Number.isFinite(XR_LIFETIME_MIN)) return;
+
   const now = performance.now();
 
   if (now >= nextXRExpireAt) {
