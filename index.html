@@ -2,10 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover"
-  />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Green Chili Hunt</title>
   <link rel="stylesheet" href="css/main.css" />
   <link rel="stylesheet" href="css/hud.css" />
@@ -26,42 +23,42 @@
 
   <!-- IN-GAME HUD -->
   <div id="gameHud" class="game-hud hidden">
+
     <div class="top-hud">
       <div class="hud-card">
         <span class="hud-label">SCORE</span>
         <span id="scoreText" class="hud-value">0</span>
       </div>
 
-      <div class="timer-card" style="background:#2D7A2D; color:#fff;">
-        <span class="hud-label" style="color:#fff;">TIME</span>
+      <div class="timer-card">
+        <span class="hud-label">TIME</span>
         <span id="timerText" class="timer-value">0s</span>
       </div>
     </div>
 
     <!-- TARGET MARKER -->
-    <div class="aim-area">
+    <div class="aim-area" onclick="window.dispatchEvent(new CustomEvent('try-catch'))">
       <div class="aim-circle"></div>
       <div class="aim-dot"></div>
       <div class="scan-line"></div>
     </div>
 
     <div class="bottom-hud">
-      <div class="hint-box" style="background: rgba(0,0,0,0.6); border-radius: 999px; padding: 12px 24px; border: none; color: #fff; font-weight: normal; font-size: 14px;">
-        Arahkan bidikan ke cabe hijau, lalu ucapkan "ijo" atau teriak kencang!
+      <div class="hint-box">
+        Arahkan bidikan ke cabe hijau, lalu ucapkan "ijo"!
       </div>
+
       <button id="catchBtn" class="catch-btn hidden" aria-hidden="true" tabindex="-1"></button>
     </div>
+
   </div>
 
   <!-- INTRO SCREEN -->
   <section id="introScreen" class="screen active">
     <div class="intro-card">
+
       <div class="logo-badge">
-        <img
-          src="assets/images/chili-green.png"
-          alt="Green Chili"
-          class="logo-image"
-        />
+        <img src="assets/images/chili-green.png" alt="Green Chili" class="logo-image" />
       </div>
 
       <h1>Green Chili Hunt</h1>
@@ -95,17 +92,16 @@
   <!-- RESULT SCREEN -->
   <section id="resultScreen" class="screen">
     <div class="result-card">
+
       <div class="logo-badge">
-        <img
-          src="assets/images/chili-green.png"
-          alt="Green Chili"
-          class="logo-image"
-        />
+        <img src="assets/images/chili-green.png" alt="Green Chili" class="logo-image" />
       </div>
 
       <h1>Challenge Complete!</h1>
+
       <p class="result-label">Time to collect 5 chilies</p>
-      <div id="finalScoreText" class="final-score" style="padding: 20px 0;">0s</div>
+
+      <div id="finalScoreText" class="final-score">0s</div>
 
       <div id="topFiveInfo" class="top-five-info hidden">
         Score saved to leaderboard
@@ -127,6 +123,7 @@
       <button id="playAgainBtn" class="primary-btn">
         Play Again
       </button>
+
     </div>
   </section>
 
@@ -151,29 +148,11 @@
       <p class="modal-score-label">Your Score</p>
       <div id="modalScoreText" class="modal-score-value">0s</div>
 
-      <label class="name-label" for="playerNameInput">
-        Your Name
-      </label>
+      <label class="name-label" for="playerNameInput">Your Name</label>
+      <input id="playerNameInput" class="name-input" type="text" maxlength="100" placeholder="Enter your name" />
 
-      <input
-        id="playerNameInput"
-        class="name-input"
-        type="text"
-        maxlength="100"
-        placeholder="Enter your name"
-      />
-
-      <label class="name-label email-label" for="playerEmailInput">
-        Your Email
-      </label>
-
-      <input
-        id="playerEmailInput"
-        class="name-input"
-        type="email"
-        maxlength="150"
-        placeholder="Enter your email"
-      />
+      <label class="name-label email-label" for="playerEmailInput">Your Email</label>
+      <input id="playerEmailInput" class="name-input" type="email" maxlength="150" placeholder="Enter your email" />
 
       <p class="email-note">
         Please use a valid email. This email will be used for score redemption.
@@ -181,13 +160,8 @@
 
       <div id="saveMessage" class="save-message"></div>
 
-      <button id="submitScoreBtn" class="primary-btn">
-        Save
-      </button>
-
-      <button id="closeSaveModalBtn" class="secondary-btn">
-        Cancel
-      </button>
+      <button id="submitScoreBtn" class="primary-btn">Save</button>
+      <button id="closeSaveModalBtn" class="secondary-btn">Cancel</button>
     </div>
   </div>
 
