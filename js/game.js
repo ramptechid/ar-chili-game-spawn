@@ -1110,37 +1110,39 @@ function startSpeechCatch() {
   voiceRecognition.lang = "id-ID";
   voiceRecognition.continuous = true;
   voiceRecognition.interimResults = true;
-  
-  // SUPPORT MULTIPLE ALTERNATIVES LIKE REACT
-  voiceRecognition.maxAlternatives = 3;
 
   voiceRecognition.onresult = (event) => {
-    let triggered = false;
     for (let i = event.resultIndex; i < event.results.length; i++) {
-        for (let j = 0; j < Math.min(event.results[i].length, 3); j++) {
-            const transcript = event.results[i][j].transcript;
-            if (isIjoCommand(transcript)) {
-                if (!triggered) {
-                    triggerVoiceCatch();
-                    triggered = true;
-                }
-                break;
-            }
-        }
+      const transcript = event.results[i][0].transcript;
+
+      if (isIjoCommand(transcript)) {
+        triggerVoiceCatch();
+        break;
+      }
     }
   };
 
   voiceRecognition.onerror = (event) => {
-    if (event.error === "not-allowed" || event.error === "service-not-allowed") voiceRecognition = null;
+    if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+      voiceRecognition = null;
+    }
   };
 
   voiceRecognition.onend = () => {
     if (gameRunning && voiceActive && voiceRecognition) {
-      try { voiceRecognition.start(); } catch (error) {}
+      try {
+        voiceRecognition.start();
+      } catch (error) {
+        // Browser may still be closing the previous recognition session.
+      }
     }
   };
 
-  try { voiceRecognition.start(); } catch (error) { voiceRecognition = null; }
+  try {
+    voiceRecognition.start();
+  } catch (error) {
+    voiceRecognition = null;
+  }
 }
 
 function startShoutLoop() {
@@ -1711,7 +1713,6 @@ function downloadScoreImage(blob) {
 function isValidEmail(email) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email); }
 function escapeHtml(text) { return String(text).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
 
-// EXTENDED VOICE MATCHER
 function isIjoCommand(text) {
   const normalized = String(text)
     .toLowerCase()
@@ -1719,14 +1720,9 @@ function isIjoCommand(text) {
     .replace(/\s+/g, " ")
     .trim();
 
-  return normalized.split(" ").some((word) => 
-     word.includes("ijo") || 
-     word.includes("hijau") || 
-     word.includes("hi") || 
-     word.includes("jau") || 
-     word.includes("jo") || 
-     word === "i"
-  );
+  return normalized
+    .split(" ")
+    .some((word) => word === "ijo" || word === "hijau");
 }
 
 function roundRect(ctx, x, y, width, height, radius) {
