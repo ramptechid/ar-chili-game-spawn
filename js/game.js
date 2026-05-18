@@ -133,6 +133,9 @@ const XR_FADEIN_MS = 320;
 const XR_EXPIRE_MS = 520;
 const XR_EXPIRE_STAGGER_MIN = 520;
 const XR_EXPIRE_STAGGER_MAX = 1250;
+const XR_MATERIAL_EXPOSURE = 1.45;
+const XR_MATERIAL_MIN_COLOR = 0.36;
+const XR_MATERIAL_BLACK_FLOOR = 0.06;
 const CHILI_SIZE_MIN = 34;
 const CHILI_SIZE_MAX = 82;
 const WORLD_RANGE_H = 24;
@@ -597,7 +600,7 @@ function setupXRRenderer() {
     void main() {
       vec3 normal = normalize(mat3(u_model) * a_normal);
       vec3 lightDir = normalize(vec3(0.35, 0.8, 0.45));
-      v_light = 0.68 + max(dot(normal, lightDir), 0.0) * 0.5;
+      v_light = 0.9 + max(dot(normal, lightDir), 0.0) * 0.35;
       v_color = a_color;
       gl_Position = u_matrix * vec4(a_position, 1.0);
     }
@@ -611,7 +614,7 @@ function setupXRRenderer() {
 
     void main() {
       vec4 color = u_color * v_color;
-      vec3 displayColor = pow(clamp(color.rgb * v_light * 1.18, 0.0, 1.0), vec3(1.0 / 2.2));
+      vec3 displayColor = pow(clamp(color.rgb * v_light, 0.0, 1.0), vec3(1.0 / 2.2));
       gl_FragColor = vec4(displayColor, color.a * u_alpha);
     }
   `);
@@ -683,8 +686,7 @@ function createXRModelFromGlb(arrayBuffer) {
   }
 
   const materials = (json.materials || []).map((material) => {
-    const factor = material.pbrMetallicRoughness?.baseColorFactor || [1, 1, 1, 1];
-    return new Float32Array(factor);
+    return getXRMaterialColor(material);
   });
 
   const primitives = [];
@@ -754,6 +756,35 @@ function createXRModelFromGlb(arrayBuffer) {
   });
 
   return { primitives };
+}
+
+function getXRMaterialColor(material) {
+  const factor = material?.pbrMetallicRoughness?.baseColorFactor || [1, 1, 1, 1];
+  const color = [
+    factor[0] ?? 1,
+    factor[1] ?? 1,
+    factor[2] ?? 1
+  ].map((channel) => clamp(channel * XR_MATERIAL_EXPOSURE, 0, 1));
+  const alpha = factor[3] ?? 1;
+  const maxChannel = Math.max(color[0], color[1], color[2]);
+
+  if (maxChannel <= 0.001) {
+    return new Float32Array([
+      XR_MATERIAL_BLACK_FLOOR,
+      XR_MATERIAL_BLACK_FLOOR,
+      XR_MATERIAL_BLACK_FLOOR,
+      alpha
+    ]);
+  }
+
+  if (maxChannel < XR_MATERIAL_MIN_COLOR) {
+    const boost = XR_MATERIAL_MIN_COLOR / maxChannel;
+    color[0] = clamp(color[0] * boost, 0, 1);
+    color[1] = clamp(color[1] * boost, 0, 1);
+    color[2] = clamp(color[2] * boost, 0, 1);
+  }
+
+  return new Float32Array([color[0], color[1], color[2], alpha]);
 }
 
 function getXRModelBounds(primitives) {
