@@ -152,7 +152,9 @@ const DEPTH_MAX = 1.1;
 const TARGET_SPAWN_RATIO = 0.2;
 const MIN_TARGET_CHILIES = 1;
 const VOICE_CATCH_COOLDOWN_MS = 850;
-const SHOUT_RMS_THRESHOLD = 0.18;
+const SHOUT_RMS_THRESHOLD = 0.07;
+const SHOUT_DYNAMIC_MULTIPLIER = 2.35;
+const SHOUT_MIN_RMS_JUMP = 0.025;
 
 const TARGET_ASSET = {
   src: "assets/images/chili-green.png",
@@ -223,6 +225,7 @@ let voiceAudioContext = null;
 let voiceAnalyser = null;
 let voiceLoopId = null;
 let lastVoiceCatchAt = 0;
+let voiceNoiseFloor = 0.02;
 
 let orientationActive = false;
 let baseGamma     = null;
@@ -1082,6 +1085,7 @@ async function startVoiceCatch() {
 
   voiceActive = true;
   lastVoiceCatchAt = 0;
+  voiceNoiseFloor = 0.02;
 
   startSpeechCatch();
 
@@ -1100,9 +1104,14 @@ async function startVoiceCatch() {
     if (!AudioContextClass) return;
 
     voiceAudioContext = new AudioContextClass();
+    if (voiceAudioContext.state === "suspended") {
+      await voiceAudioContext.resume().catch(() => {});
+    }
+
     const source = voiceAudioContext.createMediaStreamSource(voiceStream);
     voiceAnalyser = voiceAudioContext.createAnalyser();
     voiceAnalyser.fftSize = 1024;
+    voiceAnalyser.smoothingTimeConstant = 0.18;
     source.connect(voiceAnalyser);
     startShoutLoop();
   } catch (error) {
@@ -1174,9 +1183,16 @@ function startShoutLoop() {
     }
 
     const rms = Math.sqrt(sum / buffer.length);
+    const isAbsoluteShout = rms >= SHOUT_RMS_THRESHOLD;
+    const isDynamicShout = (
+      rms >= voiceNoiseFloor * SHOUT_DYNAMIC_MULTIPLIER &&
+      rms - voiceNoiseFloor >= SHOUT_MIN_RMS_JUMP
+    );
 
-    if (rms >= SHOUT_RMS_THRESHOLD) {
+    if (isAbsoluteShout || isDynamicShout) {
       triggerVoiceCatch();
+    } else {
+      voiceNoiseFloor = voiceNoiseFloor * 0.96 + rms * 0.04;
     }
 
     voiceLoopId = requestAnimationFrame(loop);
