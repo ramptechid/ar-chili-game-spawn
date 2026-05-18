@@ -994,14 +994,14 @@ function catchXRObjectByMarker() {
   if (!xrActive || !xrLastViewProjection) return false;
   let closest = null, closestDist = Infinity;
   let closestTarget = null, closestTargetDist = Infinity;
-  const radius = 0.22;
+  const aimBounds = getXRAimBounds();
 
   xrObjects.forEach((object) => {
     if (object.caught || object.catching || object.expiring) return;
     const ndc = projectXRPoint(object.position, xrLastViewProjection);
     if (!ndc || ndc.z < -1 || ndc.z > 1) return;
-    const distance = Math.sqrt(ndc.x * ndc.x + ndc.y * ndc.y);
-    if (distance > radius) return;
+    const distance = getXRAimDistance(ndc, aimBounds);
+    if (distance > 1) return;
 
     if (object.isTarget && distance < closestTargetDist) {
       closestTarget = object; closestTargetDist = distance;
@@ -1018,6 +1018,32 @@ function catchXRObjectByMarker() {
   }
   collectXRObject(object);
   return true;
+}
+
+function getXRAimBounds() {
+  const aim = document.querySelector(".aim-area");
+
+  if (!aim) {
+    return { centerX: 0, centerY: 0, radiusX: 0.22, radiusY: 0.22 };
+  }
+
+  const rect = aim.getBoundingClientRect();
+  const centerX = ((rect.left + rect.width / 2) / window.innerWidth) * 2 - 1;
+  const centerY = -(((rect.top + rect.height / 2) / window.innerHeight) * 2 - 1);
+
+  return {
+    centerX,
+    centerY,
+    radiusX: Math.max(rect.width / window.innerWidth, 0.22),
+    radiusY: Math.max(rect.height / window.innerHeight, 0.22)
+  };
+}
+
+function getXRAimDistance(ndc, aimBounds) {
+  const dx = (ndc.x - aimBounds.centerX) / aimBounds.radiusX;
+  const dy = (ndc.y - aimBounds.centerY) / aimBounds.radiusY;
+
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
 function collectXRObject(object) {
