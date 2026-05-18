@@ -117,8 +117,8 @@ const XR_SPAWN_DELAY_MIN = 900;
 const XR_SPAWN_DELAY_MAX = 1700;
 const XR_LIFETIME_MIN = 30000;
 const XR_LIFETIME_MAX = 60000;
-const XR_SIZE_MIN = 0.16;
-const XR_SIZE_MAX = 0.23;
+const XR_SIZE_MIN = 0.24;
+const XR_SIZE_MAX = 0.34;
 const XR_DISTANCE_MIN = 2.4;
 const XR_DISTANCE_MAX = 5.2;
 const XR_HEIGHT_MIN = -0.4;
@@ -588,14 +588,17 @@ function setupXRRenderer() {
   const vertexShader = createXRShader(xrGl.VERTEX_SHADER, `
     attribute vec3 a_position;
     attribute vec3 a_normal;
+    attribute vec4 a_color;
     uniform mat4 u_matrix;
     uniform mat4 u_model;
     varying float v_light;
+    varying vec4 v_color;
 
     void main() {
       vec3 normal = normalize(mat3(u_model) * a_normal);
       vec3 lightDir = normalize(vec3(0.35, 0.8, 0.45));
-      v_light = 0.45 + max(dot(normal, lightDir), 0.0) * 0.55;
+      v_light = 0.68 + max(dot(normal, lightDir), 0.0) * 0.5;
+      v_color = a_color;
       gl_Position = u_matrix * vec4(a_position, 1.0);
     }
   `);
@@ -604,9 +607,12 @@ function setupXRRenderer() {
     uniform vec4 u_color;
     uniform float u_alpha;
     varying float v_light;
+    varying vec4 v_color;
 
     void main() {
-      gl_FragColor = vec4(u_color.rgb * v_light, u_color.a * u_alpha);
+      vec4 color = u_color * v_color;
+      vec3 displayColor = pow(clamp(color.rgb * v_light * 1.18, 0.0, 1.0), vec3(1.0 / 2.2));
+      gl_FragColor = vec4(displayColor, color.a * u_alpha);
     }
   `);
 
@@ -690,6 +696,9 @@ function createXRModelFromGlb(arrayBuffer) {
       const normals = primitive.attributes.NORMAL !== undefined
         ? readGlbAccessor(json, bin, primitive.attributes.NORMAL)
         : new Float32Array(positions.length);
+      const colors = primitive.attributes.COLOR_0 !== undefined
+        ? readGlbAccessorInfo(json, bin, primitive.attributes.COLOR_0)
+        : null;
       const indices = primitive.indices !== undefined
         ? readGlbAccessor(json, bin, primitive.indices)
         : null;
@@ -697,6 +706,7 @@ function createXRModelFromGlb(arrayBuffer) {
       parsedPrimitives.push({
         positions,
         normals,
+        colors,
         indices,
         material: primitive.material
       });
@@ -715,6 +725,13 @@ function createXRModelFromGlb(arrayBuffer) {
     xrGl.bindBuffer(xrGl.ARRAY_BUFFER, normalBuffer);
     xrGl.bufferData(xrGl.ARRAY_BUFFER, primitive.normals, xrGl.STATIC_DRAW);
 
+    let colorBuffer = null;
+    if (primitive.colors) {
+      colorBuffer = xrGl.createBuffer();
+      xrGl.bindBuffer(xrGl.ARRAY_BUFFER, colorBuffer);
+      xrGl.bufferData(xrGl.ARRAY_BUFFER, primitive.colors.values, xrGl.STATIC_DRAW);
+    }
+
     let indexBuffer = null;
     if (primitive.indices) {
       indexBuffer = xrGl.createBuffer();
@@ -725,6 +742,10 @@ function createXRModelFromGlb(arrayBuffer) {
     primitives.push({
       positionBuffer,
       normalBuffer,
+      colorBuffer,
+      colorComponentCount: primitive.colors?.componentCount || 4,
+      colorComponentType: primitive.colors ? getXRAttributeType(primitive.colors.values) : xrGl.FLOAT,
+      colorNormalized: primitive.colors?.normalized || false,
       indexBuffer,
       indexType: getXRIndexType(primitive.indices),
       count: primitive.indices ? primitive.indices.length : positions.length / 3,
@@ -786,7 +807,20 @@ function getXRIndexType(indices) {
   return xrGl.UNSIGNED_SHORT;
 }
 
+function getXRAttributeType(values) {
+  if (values instanceof Float32Array) return xrGl.FLOAT;
+  if (values instanceof Uint8Array) return xrGl.UNSIGNED_BYTE;
+  if (values instanceof Int8Array) return xrGl.BYTE;
+  if (values instanceof Uint16Array) return xrGl.UNSIGNED_SHORT;
+  if (values instanceof Int16Array) return xrGl.SHORT;
+  return xrGl.FLOAT;
+}
+
 function readGlbAccessor(json, bin, accessorIndex) {
+  return readGlbAccessorInfo(json, bin, accessorIndex).values;
+}
+
+function readGlbAccessorInfo(json, bin, accessorIndex) {
   const accessor = json.accessors[accessorIndex];
   const bufferView = json.bufferViews[accessor.bufferView];
   const componentCount = getGlbAccessorComponentCount(accessor.type);
@@ -794,7 +828,12 @@ function readGlbAccessor(json, bin, accessorIndex) {
   const byteOffset = (bufferView.byteOffset || 0) + (accessor.byteOffset || 0);
   const length = accessor.count * componentCount;
 
-  return new TypedArray(bin, byteOffset, length);
+  return {
+    values: new TypedArray(bin, byteOffset, length),
+    componentCount,
+    componentType: accessor.componentType,
+    normalized: !!accessor.normalized
+  };
 }
 
 function getGlbAccessorComponentCount(type) {
@@ -852,6 +891,7 @@ function renderXRObjects(view) {
 
   const positionLocation = xrGl.getAttribLocation(xrProgram, "a_position");
   const normalLocation = xrGl.getAttribLocation(xrProgram, "a_normal");
+  const vertexColorLocation = xrGl.getAttribLocation(xrProgram, "a_color");
 
   const matrixLocation = xrGl.getUniformLocation(xrProgram, "u_matrix");
   const modelLocation = xrGl.getUniformLocation(xrProgram, "u_model");
@@ -900,6 +940,22 @@ function renderXRObjects(view) {
       xrGl.bindBuffer(xrGl.ARRAY_BUFFER, primitive.normalBuffer);
       xrGl.enableVertexAttribArray(normalLocation);
       xrGl.vertexAttribPointer(normalLocation, 3, xrGl.FLOAT, false, 0, 0);
+
+      if (primitive.colorBuffer) {
+        xrGl.bindBuffer(xrGl.ARRAY_BUFFER, primitive.colorBuffer);
+        xrGl.enableVertexAttribArray(vertexColorLocation);
+        xrGl.vertexAttribPointer(
+          vertexColorLocation,
+          primitive.colorComponentCount,
+          primitive.colorComponentType,
+          primitive.colorNormalized,
+          0,
+          0
+        );
+      } else {
+        xrGl.disableVertexAttribArray(vertexColorLocation);
+        xrGl.vertexAttrib4f(vertexColorLocation, 1, 1, 1, 1);
+      }
 
       xrGl.uniform4fv(colorLocation, primitive.color);
 
@@ -1202,6 +1258,7 @@ function stopXRSession(endSession = true) {
       model.primitives.forEach((primitive) => {
         xrGl.deleteBuffer(primitive.positionBuffer);
         xrGl.deleteBuffer(primitive.normalBuffer);
+        if (primitive.colorBuffer) xrGl.deleteBuffer(primitive.colorBuffer);
         if (primitive.indexBuffer) xrGl.deleteBuffer(primitive.indexBuffer);
       });
     });
