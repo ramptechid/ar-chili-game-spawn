@@ -195,10 +195,24 @@
   height: 100dvh;
   overflow: hidden;
   background-color: #041006;
+  isolation: isolate;
+}
+
+#introScreen::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
   background-image: url("../assets/ui/bg_home.png");
   background-position: center center;
-  background-size: cover;
+  background-size: 100% 100%;
   background-repeat: no-repeat;
+}
+
+#introScreen .intro-card {
+  position: relative;
+  z-index: 1;
 }
 
 .intro-card,
