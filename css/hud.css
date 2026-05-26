@@ -217,7 +217,7 @@
 
 .home-hover-image {
   z-index: 1;
-  inset: 50% auto auto 50%;
+  inset: 50% auto auto calc(50% + 12vw);
   width: 112vw;
   height: 112dvh;
   transform: translate(-50%, -50%);
