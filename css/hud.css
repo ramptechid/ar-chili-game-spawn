@@ -374,9 +374,9 @@
 }
 
 .home-title-image {
-  width: min(86vw, 300px);
+  width: min(70vw, 248px);
   height: auto;
-  margin-bottom: -18px;
+  margin-bottom: -12px;
   display: block;
   filter: drop-shadow(0 14px 14px rgba(0, 0, 0, 0.5));
 }
