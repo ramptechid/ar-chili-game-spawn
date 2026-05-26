@@ -191,7 +191,14 @@
 }
 
 #introScreen {
-  background: #041006 url("../assets/ui/bg_home.png") center / cover no-repeat;
+  width: 100vw;
+  height: 100dvh;
+  overflow: hidden;
+  background-color: #041006;
+  background-image: url("../assets/ui/bg_home.png");
+  background-position: center center;
+  background-size: cover;
+  background-repeat: no-repeat;
 }
 
 .intro-card,
