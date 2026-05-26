@@ -191,9 +191,7 @@
 }
 
 #introScreen {
-  background:
-    linear-gradient(to bottom, rgba(2, 8, 3, 0.14), rgba(2, 8, 3, 0.5)),
-    url("../assets/ui/bg_home.png") center / cover no-repeat;
+  background: #041006 url("../assets/ui/bg_home.png") center / cover no-repeat;
 }
 
 .intro-card,
