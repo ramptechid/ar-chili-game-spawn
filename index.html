@@ -61,41 +61,51 @@
 
   <!-- INTRO SCREEN -->
   <section id="introScreen" class="screen active">
-    <div class="intro-card">
+    <img
+      src="assets/ui/bg_home.png"
+      alt=""
+      class="home-bg-image"
+      aria-hidden="true"
+    />
+    <img
+      src="assets/ui/hover_cabe.png"
+      alt=""
+      class="home-hover-image"
+      aria-hidden="true"
+    />
 
-      <div class="logo-badge">
-        <img
-          src="assets/images/chili-green.png"
-          alt="Green Chili"
-          class="logo-image"
-        />
+    <div class="intro-card home-card">
+
+      <div class="home-brand-placeholder">
+        Indomie
       </div>
 
-      <h1>Green Chili Hunt</h1>
+      <div class="home-title-placeholder" aria-label="Cari Cabe Ijo">
+        <span>CARI</span>
+        <strong>CABE IJO</strong>
+      </div>
 
-      <p class="intro-desc">
-        Cabe hijau tersembunyi di antara object lain di sekitarmu.
-        Gerakkan HP untuk mencari, arahkan bidikan ke cabe hijau,
-        lalu ucapkan <b>"ijo"</b>.
-      </p>
+      <div class="home-ribbon-placeholder">
+        THE GAME
+      </div>
 
-      <div class="how-to-box">
-        <h3>Cara Bermain</h3>
+      <div class="how-to-box home-panel">
+        <p class="intro-desc">
+          Temukan cabe ijo yang tersembunyi di antara objek di sekitarmu.
+          Gerakkan HP-mu untuk mencari, arahkan
+        </p>
 
-        <ul>
-          <li>Gunakan Chrome di Android yang mendukung ARCore.</li>
-          <li>Izinkan akses AR camera dan mikrofon.</li>
-          <li>Cabe hijau bercampur dengan object pengecoh.</li>
-          <li>Gerakkan HP untuk mencari di ruang AR.</li>
-          <li>Arahkan marker tengah ke cabe hijau.</li>
-          <li>Ucapkan <b>"ijo"</b> untuk menangkap cabe.</li>
-          <li>Kumpulkan 5 cabe hijau secepat mungkin.</li>
+        <ul class="home-steps">
+          <li>Izinkan akses AR kamera dan mikrofon</li>
+          <li>Gerakkan kamera untuk temukan Cabe Ijo</li>
+          <li>Arahkan target dan ucapkan "ijo"</li>
+          <li>Kumpulkan 5 Cabe Ijo secepat mungkin!</li>
         </ul>
-      </div>
 
-      <button id="startBtn" class="primary-btn">
-        Start Game
-      </button>
+        <button id="startBtn" class="primary-btn home-start-btn">
+          MULAI MAIN
+        </button>
+      </div>
 
     </div>
   </section>
