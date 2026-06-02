@@ -68,14 +68,20 @@ body.game-mode .camera-overlay {
   opacity: 1;
 }
 
-body.intro-mode #cameraView,
-body.result-mode #cameraView {
+body.intro-mode #cameraView {
   opacity: 0;
 }
 
-body.intro-mode .camera-overlay,
-body.result-mode .camera-overlay {
+body.result-mode #cameraView {
+  opacity: 1;
+}
+
+body.intro-mode .camera-overlay {
   opacity: 0;
+}
+
+body.result-mode .camera-overlay {
+  opacity: 1;
 }
 
 /* In WebXR mode the browser provides the camera — hide our fallback elements */

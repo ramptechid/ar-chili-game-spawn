@@ -984,12 +984,7 @@ function collectXRObject(object) {
 }
 
 function runXRSpawner() {
-  clearInterval(xrSpawnInterval);
-  clearTimeout(xrSpawnTimeout);
-  xrInitialSpawnTimeouts.forEach((id) => clearTimeout(id));
-  xrSpawnInterval = null;
-  xrSpawnTimeout = null;
-  xrInitialSpawnTimeouts = [];
+  clearXRSpawnTimers();
 
   let initialDelay = 350;
 
@@ -1022,18 +1017,16 @@ function scheduleNextXRSpawn(delay = randomNumber(XR_SPAWN_DELAY_MIN, XR_SPAWN_D
   }, delay);
 }
 
-function stopXRSession(endSession = true) {
-  xrActive = false;
-  stopCamera();
-
+function clearXRSpawnTimers() {
   clearInterval(xrSpawnInterval);
   clearTimeout(xrSpawnTimeout);
   xrInitialSpawnTimeouts.forEach((id) => clearTimeout(id));
   xrSpawnInterval = null;
   xrSpawnTimeout = null;
   xrInitialSpawnTimeouts = [];
+}
 
-  // Remove all active meshes from scene
+function clearXRObjects() {
   if (threeScene) {
     xrObjects.forEach((obj) => {
       if (obj.mesh) threeScene.remove(obj.mesh);
@@ -1041,9 +1034,18 @@ function stopXRSession(endSession = true) {
   }
 
   xrObjects = [];
-  xrLastCamera = null;
   xrLastRefillAt = 0;
   nextXRExpireAt = 0;
+}
+
+function stopXRSession(endSession = true) {
+  xrActive = false;
+  stopCamera();
+
+  clearXRSpawnTimers();
+
+  clearXRObjects();
+  xrLastCamera = null;
 
   document.body.classList.remove("xr-mode");
 
@@ -1375,8 +1377,8 @@ function endGame() {
   loadLeaderboard();
 
   stopOrientationTracking();
-  stopXRSession();
-  stopCamera();
+  clearXRSpawnTimers();
+  clearXRObjects();
 
   document.body.classList.remove("game-mode");
   document.body.classList.add("result-mode");
