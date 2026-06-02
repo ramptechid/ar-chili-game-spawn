@@ -92,7 +92,6 @@ const timerText = document.getElementById("timerText");
 const finalScoreText = document.getElementById("finalScoreText");
 const leaderboardList = document.getElementById("leaderboardList");
 const aimArea = document.querySelector(".aim-area");
-const voiceMeterProgress = document.querySelector(".voice-meter-progress");
 const chiliSlots = Array.from(document.querySelectorAll(".chili-slot"));
 const CHILI_HUD_ACTIVE_SRC = "assets/ui/chili_hud_active.png";
 const CHILI_HUD_INACTIVE_SRC = "assets/ui/chili_hud_inactive.png";
@@ -1233,10 +1232,7 @@ function setVoiceMeterLevel(level) {
 
   if (aimArea) {
     aimArea.style.setProperty("--voice-level", normalizedLevel.toFixed(3));
-  }
-
-  if (voiceMeterProgress) {
-    voiceMeterProgress.style.strokeDashoffset = (100 - normalizedLevel * 100).toFixed(2);
+    aimArea.style.setProperty("--voice-sweep", `${(normalizedLevel * 360).toFixed(1)}deg`);
   }
 
   if (normalizedLevel >= 1 && gameRunning) {

@@ -46,16 +46,10 @@
     <div class="aim-area">
       <div class="target-brackets" aria-hidden="true"></div>
 
-      <svg class="voice-meter" viewBox="0 0 120 120" aria-hidden="true">
-        <defs>
-          <linearGradient id="voiceMeterGradient" x1="18" y1="100" x2="104" y2="22" gradientUnits="userSpaceOnUse">
-            <stop offset="0" stop-color="#51e66b" />
-            <stop offset="0.55" stop-color="#bcff42" />
-            <stop offset="1" stop-color="#f3ff66" />
-          </linearGradient>
-        </defs>
-        <circle class="voice-meter-progress" cx="60" cy="60" r="39" pathLength="100" />
-      </svg>
+      <div class="voice-meter" aria-hidden="true">
+        <div class="voice-meter-empty"></div>
+        <div class="voice-meter-fill"></div>
+      </div>
 
       <div class="aim-line"></div>
       <div class="aim-dot"></div>

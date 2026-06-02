@@ -5,6 +5,7 @@
   z-index: 10;
   pointer-events: none;
   --voice-level: 0;
+  --voice-sweep: 0deg;
   font-family: "Saira", Arial, Helvetica, sans-serif;
 }
 
@@ -87,26 +88,32 @@
   top: 50%;
   width: 58%;
   height: 58%;
-  overflow: visible;
-  transform: translate(-50%, -50%) rotate(-96deg);
-  background: url("../assets/ui/voice_meter_track.png") center / 100% 100% no-repeat;
+  overflow: hidden;
+  transform: translate(-50%, -50%);
   filter:
     drop-shadow(0 0 12px rgba(179, 255, 67, 0.32))
     drop-shadow(0 7px 14px rgba(0, 0, 0, 0.25));
 }
 
-.voice-meter-progress {
-  fill: none;
-  vector-effect: non-scaling-stroke;
+.voice-meter-empty,
+.voice-meter-fill {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
 }
 
-.voice-meter-progress {
-  stroke: url("#voiceMeterGradient");
-  stroke-width: 8;
-  stroke-linecap: round;
-  stroke-dasharray: 100;
-  stroke-dashoffset: 100;
-  transition: stroke-dashoffset 80ms ease-out;
+.voice-meter-empty {
+  background-image: url("../assets/ui/voice_meter_empty.png");
+}
+
+.voice-meter-fill {
+  background-image: url("../assets/ui/voice_meter_fill_full.png");
+  transform: rotate(-96deg);
+  transition: mask-image 80ms ease-out, -webkit-mask-image 80ms ease-out;
+  -webkit-mask-image: conic-gradient(#000 0deg var(--voice-sweep), transparent var(--voice-sweep) 360deg);
+  mask-image: conic-gradient(#000 0deg var(--voice-sweep), transparent var(--voice-sweep) 360deg);
 }
 
 .aim-line {
