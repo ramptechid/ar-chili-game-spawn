@@ -733,61 +733,63 @@
 
 .leaderboard-list {
   width: 100%;
-  aspect-ratio: 514 / 457;
-  padding: 6.5% 4.5% 6.5% 8%;
-  display: grid;
-  grid-template-rows: repeat(5, minmax(0, 1fr));
-  gap: 1.2%;
-  background: url("../assets/ui/leaderboard_frame_rank.png") center / 100% 100% no-repeat;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(2px, 0.55dvh, 5px);
+  background: transparent;
 }
 
 .leaderboard-item {
   position: relative;
-  min-height: 0;
-  display: flex;
+  width: 100%;
+  aspect-ratio: 514 / 81;
+  display: grid;
+  grid-template-columns: 17% minmax(0, 1fr) 19%;
   align-items: center;
-  gap: 4%;
-  padding: 0 3% 0 0;
+  gap: 2%;
+  padding: 0 8% 0 0;
   color: #ffffff;
   font-size: clamp(10px, 2.8vw, 12px);
   font-weight: 900;
   line-height: 1;
-  background: transparent;
+  background: url("../assets/ui/leaderboard_row_rank.png") center / 100% 100% no-repeat;
   border: none;
   border-radius: 0;
   box-shadow: none;
 }
 
 .leaderboard-rank {
-  width: 13%;
+  width: 100%;
   height: 100%;
   margin-left: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 auto;
-  visibility: hidden;
+  color: #ffffff;
+  font-size: clamp(14px, 4.3vw, 21px);
+  line-height: 1;
+  font-weight: 900;
+  transform: translateY(-1px);
 }
 
 .leaderboard-name {
-  flex: 1;
   text-align: left;
   color: #ffffff;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   line-height: 1;
-  transform: translateY(-2px);
+  transform: translateY(-1px);
 }
 
 .leaderboard-score {
-  flex: 0 0 auto;
-  min-width: 42px;
+  min-width: 0;
   color: #ffffff;
   font-weight: 900;
   line-height: 1;
   text-align: right;
-  transform: translateY(-2px);
+  transform: translateY(-1px);
 }
 
 .result-action-btn,

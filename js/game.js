@@ -1892,34 +1892,25 @@ async function loadLeaderboard() {
 function renderLeaderboard(leaderboard) {
   leaderboardList.innerHTML = "";
 
-  if (!leaderboard || leaderboard.length === 0) {
-    const emptyRow = document.createElement("div");
-    emptyRow.className = "leaderboard-item";
-    emptyRow.innerHTML = `
-      <span class="leaderboard-rank">-</span>
-      <span class="leaderboard-name">Belum ada skor</span>
-      <span class="leaderboard-score">00:00</span>
-    `;
-
-    leaderboardList.appendChild(emptyRow);
-    return;
-  }
-
-  leaderboard.slice(0, 5).forEach((item, index) => {
+  for (let index = 0; index < 5; index++) {
+    const item = leaderboard?.[index];
     const row = document.createElement("div");
     row.className = "leaderboard-item";
 
-    const safeName = escapeHtml(item.name || item.player_name || "Player");
-    const safeScore = Number(item.total_score ?? item.score ?? item.time_seconds ?? item.time ?? 0);
+    const safeName = item
+      ? escapeHtml(item.name || item.player_name || "Player")
+      : "-";
+    const scoreValue = Number(item?.total_score ?? item?.score ?? item?.time_seconds ?? item?.time ?? 0);
+    const safeScore = item ? formatHudTime(scoreValue) : "--:--";
 
     row.innerHTML = `
       <span class="leaderboard-rank">${index + 1}</span>
       <span class="leaderboard-name">${safeName}</span>
-      <span class="leaderboard-score">${formatHudTime(safeScore)}</span>
+      <span class="leaderboard-score">${safeScore}</span>
     `;
 
     leaderboardList.appendChild(row);
-  });
+  }
 }
 
 function normalizeLeaderboardResponse(data) {
@@ -1933,15 +1924,17 @@ function normalizeLeaderboardResponse(data) {
 function renderLeaderboardUnavailable() {
   leaderboardList.innerHTML = "";
 
-  const row = document.createElement("div");
-  row.className = "leaderboard-item";
-  row.innerHTML = `
-    <span class="leaderboard-rank">-</span>
-    <span class="leaderboard-name">Leaderboard belum tersedia</span>
-    <span class="leaderboard-score">-</span>
-  `;
+  for (let index = 0; index < 5; index++) {
+    const row = document.createElement("div");
+    row.className = "leaderboard-item";
+    row.innerHTML = `
+      <span class="leaderboard-rank">${index + 1}</span>
+      <span class="leaderboard-name">${index === 0 ? "Leaderboard belum tersedia" : "-"}</span>
+      <span class="leaderboard-score">--:--</span>
+    `;
 
-  leaderboardList.appendChild(row);
+    leaderboardList.appendChild(row);
+  }
 }
 
 /* =========================
