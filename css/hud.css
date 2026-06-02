@@ -70,9 +70,11 @@
   width: clamp(236px, 70vmin, 320px);
   height: clamp(236px, 70vmin, 320px);
   transform: translate(-50%, -50%);
+  transform-origin: center center;
   z-index: 2;
   pointer-events: none;
   opacity: 0.96;
+  contain: layout paint style;
 }
 
 .target-brackets {
@@ -80,6 +82,7 @@
   inset: 0;
   background: url("../assets/ui/target_brackets.png") center / 100% 100% no-repeat;
   filter: drop-shadow(0 0 11px rgba(95, 255, 94, 0.5));
+  transform-origin: center center;
 }
 
 .voice-meter {
@@ -90,6 +93,7 @@
   height: 58%;
   overflow: hidden;
   transform: translate(-50%, -50%);
+  transform-origin: center center;
   filter:
     drop-shadow(0 0 12px rgba(179, 255, 67, 0.32))
     drop-shadow(0 7px 14px rgba(0, 0, 0, 0.25));
@@ -111,21 +115,10 @@
 .voice-meter-fill {
   background-image: url("../assets/ui/voice_meter_fill_full.png");
   transform: rotate(-96deg);
+  transform-origin: center center;
   transition: mask-image 80ms ease-out, -webkit-mask-image 80ms ease-out;
   -webkit-mask-image: conic-gradient(#000 0deg var(--voice-sweep), transparent var(--voice-sweep) 360deg);
   mask-image: conic-gradient(#000 0deg var(--voice-sweep), transparent var(--voice-sweep) 360deg);
-}
-
-.aim-line {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 22%;
-  height: 3px;
-  transform: translateY(-50%);
-  transform-origin: left center;
-  background: linear-gradient(to right, #cfff3d, #0a1a0b);
-  box-shadow: 0 0 11px rgba(211, 255, 59, 0.56);
 }
 
 .aim-dot {
@@ -138,10 +131,6 @@
   border-radius: 50%;
   background: #d9ff31;
   box-shadow: 0 0 18px rgba(216, 255, 49, 0.9);
-}
-
-.aim-area.miss {
-  animation: missShake 0.25s ease-in-out;
 }
 
 .aim-area.miss .target-brackets,
@@ -777,28 +766,6 @@
 
   to {
     transform: translateY(46px);
-  }
-}
-
-@keyframes missShake {
-  0% {
-    transform: translateX(0);
-  }
-
-  25% {
-    transform: translateX(-6px);
-  }
-
-  50% {
-    transform: translateX(6px);
-  }
-
-  75% {
-    transform: translateX(-4px);
-  }
-
-  100% {
-    transform: translateX(0);
   }
 }
 
