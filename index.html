@@ -146,40 +146,40 @@
   <section id="resultScreen" class="screen">
     <div class="result-card">
 
-      <div class="logo-badge">
-        <img
-          src="assets/images/chili-green.png"
-          alt="Green Chili"
-          class="logo-image"
-        />
+      <img src="assets/ui/logo_brand.png" alt="Indomie" class="result-brand-image" />
+      <img src="assets/ui/title_cari_cabe_ijo.png" alt="Cari Cabe Ijo" class="result-title-image" />
+      <img src="assets/ui/ribbon_the_game.png" alt="The Game" class="result-ribbon-image" />
+
+      <div class="result-panel">
+        <h1>PENCARIAN<br />SELESAI!</h1>
+
+        <div class="result-score-box">
+          <p class="result-label">DURASI PENCARIAN</p>
+          <div id="finalScoreText" class="final-score">00:00</div>
+        </div>
+
+        <div id="topFiveInfo" class="top-five-info hidden">
+          Skor tersimpan di leaderboard
+        </div>
+
+        <div class="leaderboard-box">
+          <h3>Peringkat 5 Teratas</h3>
+          <div id="leaderboardList" class="leaderboard-list"></div>
+        </div>
+
+        <button id="shareBtn" class="secondary-btn result-action-btn">
+          BAGIKAN SKOR
+        </button>
+
+        <button id="saveScoreBtn" class="secondary-btn result-action-btn">
+          SIMPAN SKOR
+        </button>
+
+        <button id="playAgainBtn" class="primary-btn result-play-btn">
+          MAIN LAGI
+        </button>
       </div>
 
-      <h1>Challenge Complete!</h1>
-
-      <p class="result-label">Time to collect 5 chilies</p>
-
-      <div id="finalScoreText" class="final-score">0</div>
-
-      <div id="topFiveInfo" class="top-five-info hidden">
-        Score saved to leaderboard
-      </div>
-
-      <div class="leaderboard-box">
-        <h3>Top 5 Leaderboard</h3>
-        <div id="leaderboardList" class="leaderboard-list"></div>
-      </div>
-
-      <button id="shareBtn" class="secondary-btn">
-        Share Score Image
-      </button>
-
-      <button id="saveScoreBtn" class="secondary-btn">
-        Save Score
-      </button>
-
-      <button id="playAgainBtn" class="primary-btn">
-        Play Again
-      </button>
 
     </div>
   </section>
@@ -200,48 +200,56 @@
   <!-- SAVE SCORE MODAL -->
   <div id="saveScoreModal" class="save-modal hidden">
     <div class="save-modal-card">
-      <h2>Save Your Score</h2>
+      <img src="assets/ui/logo_brand.png" alt="Indomie" class="save-brand-image" />
+      <img src="assets/ui/title_cari_cabe_ijo.png" alt="Cari Cabe Ijo" class="save-title-image" />
+      <img src="assets/ui/ribbon_the_game.png" alt="The Game" class="save-ribbon-image" />
 
-      <p class="modal-score-label">Your Score</p>
-      <div id="modalScoreText" class="modal-score-value">0</div>
+      <div class="save-panel">
+        <h2>SIMPAN SKOR-MU!</h2>
 
-      <label class="name-label" for="playerNameInput">
-        Your Name
-      </label>
+        <div class="result-score-box save-score-box">
+          <p class="modal-score-label">DURASI PENCARIAN</p>
+          <div id="modalScoreText" class="modal-score-value">00:00</div>
+        </div>
 
-      <input
-        id="playerNameInput"
-        class="name-input"
-        type="text"
-        maxlength="100"
-        placeholder="Enter your name"
-      />
+        <label class="name-label" for="playerNameInput">
+          Nama
+        </label>
 
-      <label class="name-label email-label" for="playerEmailInput">
-        Your Email
-      </label>
+        <input
+          id="playerNameInput"
+          class="name-input"
+          type="text"
+          maxlength="100"
+          placeholder=""
+        />
 
-      <input
-        id="playerEmailInput"
-        class="name-input"
-        type="email"
-        maxlength="150"
-        placeholder="Enter your email"
-      />
+        <label class="name-label email-label" for="playerEmailInput">
+          E-mail
+        </label>
 
-      <p class="email-note">
-        Please use a valid email. This email will be used for score redemption.
-      </p>
+        <input
+          id="playerEmailInput"
+          class="name-input"
+          type="email"
+          maxlength="150"
+          placeholder=""
+        />
 
-      <div id="saveMessage" class="save-message"></div>
+        <p class="email-note">
+          Mohon masukkan e-mail yang benar. E-mail digunakan untuk penukaran hadiah.
+        </p>
 
-      <button id="submitScoreBtn" class="primary-btn">
-        Save
-      </button>
+        <div id="saveMessage" class="save-message"></div>
 
-      <button id="closeSaveModalBtn" class="secondary-btn">
-        Cancel
-      </button>
+        <button id="submitScoreBtn" class="primary-btn">
+          SIMPAN
+        </button>
+
+        <button id="closeSaveModalBtn" class="secondary-btn">
+          BATAL
+        </button>
+      </div>
     </div>
   </div>
 

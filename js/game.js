@@ -1285,7 +1285,7 @@ function resetGameData() {
 
   updateScoreText();
   timerText.textContent = formatHudTime(elapsedTime);
-  finalScoreText.textContent = formatElapsedTime(elapsedTime);
+  finalScoreText.textContent = formatHudTime(elapsedTime);
 
   topFiveInfo.classList.add("hidden");
   saveScoreBtn.classList.add("hidden");
@@ -1364,7 +1364,7 @@ function endGame() {
   setVoiceMeterLevel(0);
   gameHud.classList.add("hidden");
 
-  finalScoreText.textContent = formatElapsedTime(elapsedTime);
+  finalScoreText.textContent = formatHudTime(elapsedTime);
 
   scoreSaved = false;
   topFiveInfo.classList.add("hidden");
@@ -1405,7 +1405,7 @@ function resetToIntro() {
 
   updateScoreText();
   timerText.textContent = formatHudTime(elapsedTime);
-  finalScoreText.textContent = formatElapsedTime(elapsedTime);
+  finalScoreText.textContent = formatHudTime(elapsedTime);
 
   topFiveInfo.classList.add("hidden");
   saveScoreBtn.classList.add("hidden");
@@ -1426,7 +1426,7 @@ function startPlayAgainCooldown() {
   clearPlayAgainCooldown();
 
   playAgainBtn.disabled = true;
-  playAgainBtn.textContent = `Play Again (${cooldownLeft})`;
+  playAgainBtn.textContent = `MAIN LAGI (${cooldownLeft})`;
 
   playAgainCooldownInterval = setInterval(() => {
     cooldownLeft--;
@@ -1436,7 +1436,7 @@ function startPlayAgainCooldown() {
       return;
     }
 
-    playAgainBtn.textContent = `Play Again (${cooldownLeft})`;
+    playAgainBtn.textContent = `MAIN LAGI (${cooldownLeft})`;
   }, 1000);
 }
 
@@ -1445,7 +1445,7 @@ function clearPlayAgainCooldown() {
   playAgainCooldownInterval = null;
 
   playAgainBtn.disabled = false;
-  playAgainBtn.textContent = "Play Again";
+  playAgainBtn.textContent = "MAIN LAGI";
 }
 
 /* =========================
@@ -1897,15 +1897,15 @@ function renderLeaderboard(leaderboard) {
     emptyRow.className = "leaderboard-item";
     emptyRow.innerHTML = `
       <span class="leaderboard-rank">-</span>
-      <span class="leaderboard-name">No results yet</span>
-      <span class="leaderboard-score">0</span>
+      <span class="leaderboard-name">Belum ada skor</span>
+      <span class="leaderboard-score">00:00</span>
     `;
 
     leaderboardList.appendChild(emptyRow);
     return;
   }
 
-  leaderboard.forEach((item, index) => {
+  leaderboard.slice(0, 5).forEach((item, index) => {
     const row = document.createElement("div");
     row.className = "leaderboard-item";
 
@@ -1913,9 +1913,9 @@ function renderLeaderboard(leaderboard) {
     const safeScore = Number(item.total_score ?? item.score ?? item.time_seconds ?? item.time ?? 0);
 
     row.innerHTML = `
-      <span class="leaderboard-rank">#${index + 1}</span>
+      <span class="leaderboard-rank">${index + 1}</span>
       <span class="leaderboard-name">${safeName}</span>
-      <span class="leaderboard-score">${formatElapsedTime(safeScore)}</span>
+      <span class="leaderboard-score">${formatHudTime(safeScore)}</span>
     `;
 
     leaderboardList.appendChild(row);
@@ -1937,7 +1937,7 @@ function renderLeaderboardUnavailable() {
   row.className = "leaderboard-item";
   row.innerHTML = `
     <span class="leaderboard-rank">-</span>
-    <span class="leaderboard-name">Leaderboard unavailable</span>
+    <span class="leaderboard-name">Leaderboard belum tersedia</span>
     <span class="leaderboard-score">-</span>
   `;
 
@@ -1949,7 +1949,7 @@ function renderLeaderboardUnavailable() {
 ========================= */
 
 function openSaveScoreModal() {
-  modalScoreText.textContent = formatElapsedTime(elapsedTime);
+  modalScoreText.textContent = formatHudTime(elapsedTime);
   playerNameInput.value = "";
   playerEmailInput.value = "";
   saveMessage.textContent = "";
@@ -1983,21 +1983,21 @@ async function submitScore() {
   const email = playerEmailInput.value.trim();
 
   if (!name) {
-    saveMessage.textContent = "Please enter your name.";
+    saveMessage.textContent = "Masukkan nama kamu.";
     saveMessage.className = "save-message error";
     playerNameInput.focus();
     return;
   }
 
   if (!isValidEmail(email)) {
-    saveMessage.textContent = "Please enter a valid email.";
+    saveMessage.textContent = "Masukkan e-mail yang valid.";
     saveMessage.className = "save-message error";
     playerEmailInput.focus();
     return;
   }
 
   submitScoreBtn.disabled = true;
-  saveMessage.textContent = "Saving score...";
+  saveMessage.textContent = "Menyimpan skor...";
   saveMessage.className = "save-message";
 
   try {
@@ -2016,11 +2016,11 @@ async function submitScore() {
     });
 
     scoreSaved = true;
-    saveMessage.textContent = "Score saved successfully.";
+    saveMessage.textContent = "Skor berhasil disimpan.";
     saveMessage.className = "save-message success";
     saveScoreBtn.classList.add("hidden");
     shareBtn.disabled = false;
-    topFiveInfo.textContent = "Score saved to leaderboard";
+    topFiveInfo.textContent = "Skor tersimpan di leaderboard";
     topFiveInfo.classList.remove("hidden");
     await loadLeaderboard();
 
