@@ -293,6 +293,7 @@ let smoothBeta    = 0;
 let orientLoopId  = null;
 
 document.body.classList.add("intro-mode");
+setBrowserScreen("intro", "replace");
 
 /* =========================
    EVENTS
@@ -307,6 +308,7 @@ saveScoreBtn.addEventListener("click", openSaveScoreModal);
 closeSaveModalBtn.addEventListener("click", closeSaveScoreModal);
 submitScoreBtn.addEventListener("click", submitScore);
 closeAppNoticeBtn.addEventListener("click", closeAppNotice);
+window.addEventListener("popstate", handleBrowserBack);
 
 /* =========================
    DEVICE ORIENTATION (world-anchor chilies)
@@ -1248,6 +1250,28 @@ function setVoiceMeterLevel(level) {
    GAME FLOW
 ========================= */
 
+function setBrowserScreen(screen, mode = "replace") {
+  if (!window.history?.[`${mode}State`]) return;
+
+  try {
+    window.history[`${mode}State`]({ screen }, "", window.location.href);
+  } catch (error) {
+    // Some embedded browsers limit history writes; gameplay should continue.
+  }
+}
+
+function handleBrowserBack() {
+  if (gameRunning) {
+    resetToIntro(false);
+    setBrowserScreen("intro", "replace");
+    return;
+  }
+
+  if (!saveScoreModal.classList.contains("hidden")) {
+    closeSaveScoreModal();
+  }
+}
+
 async function startGame() {
   stopOrientationTracking();
   stopCamera();
@@ -1273,6 +1297,7 @@ async function startGame() {
   gameHud.classList.remove("hidden");
 
   gameRunning = true;
+  setBrowserScreen("game", "push");
 
   startVoiceCatch();
   runTimer();
@@ -1370,6 +1395,7 @@ function endGame() {
 
   scoreSaved = false;
   topFiveInfo.classList.add("hidden");
+  resultScreen.classList.remove("save-score-open");
   saveScoreBtn.classList.remove("hidden");
   shareBtn.disabled = false;
   startPlayAgainCooldown();
@@ -1382,11 +1408,12 @@ function endGame() {
 
   document.body.classList.remove("game-mode");
   document.body.classList.add("result-mode");
+  setBrowserScreen("result", "replace");
 
   resultScreen.classList.add("active");
 }
 
-function resetToIntro() {
+function resetToIntro(updateHistory = true) {
   gameRunning = false;
   clearPlayAgainCooldown();
 
@@ -1420,6 +1447,10 @@ function resetToIntro() {
   document.body.classList.remove("game-mode");
   document.body.classList.remove("result-mode");
   document.body.classList.add("intro-mode");
+
+  if (updateHistory) {
+    setBrowserScreen("intro", "replace");
+  }
 }
 
 function startPlayAgainCooldown() {

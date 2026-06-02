@@ -271,8 +271,7 @@
   isolation: isolate;
 }
 
-.home-bg-image,
-.home-hover-image {
+.home-bg-image {
   position: fixed;
   inset: 0;
   width: 100vw;
@@ -286,16 +285,6 @@
   z-index: 0;
   object-fit: cover;
   object-position: center top;
-}
-
-.home-hover-image {
-  z-index: 1;
-  inset: calc(50% + 6vw) auto auto calc(50% + 12vw);
-  width: 112vw;
-  height: 112dvh;
-  object-fit: cover;
-  object-position: center;
-  transform: translate(-50%, -50%);
 }
 
 #introScreen .intro-card {
