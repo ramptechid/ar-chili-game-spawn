@@ -782,8 +782,10 @@
 .result-action-btn,
 .result-play-btn {
   width: min(86%, 190px);
-  min-height: clamp(32px, 5.8dvh, 42px);
+  aspect-ratio: 421 / 87;
+  min-height: 0;
   margin-top: 6px;
+  padding: 0 18px;
   border-radius: 0;
   font-size: clamp(12px, 3.7vw, 16px);
   line-height: 1;
@@ -791,21 +793,15 @@
   font-style: italic;
   font-weight: 900;
   text-transform: uppercase;
-  clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 10px, 100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0 calc(100% - 10px), 0 10px);
-}
-
-.result-action-btn {
   color: #ffffff;
-  background: rgba(5, 77, 32, 0.92);
-  border: 3px solid #caff64;
+  background: url("../assets/ui/button_bagikan_simpan.png") center / 100% 100% no-repeat;
+  border: none;
   box-shadow: none;
+  clip-path: none;
 }
 
 .result-play-btn {
-  color: #0f4a20;
-  background: linear-gradient(180deg, #c5ff68, #4ddb61);
-  border: none;
-  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.22);
+  color: #ffffff;
 }
 
 /* APP NOTICE */
