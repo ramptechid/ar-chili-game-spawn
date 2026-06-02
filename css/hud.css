@@ -556,6 +556,11 @@
   display: flex;
 }
 
+#resultScreen.save-score-open .result-card {
+  display: none;
+  pointer-events: none;
+}
+
 .result-card {
   position: relative;
   width: min(76vw, 292px);
@@ -875,7 +880,7 @@
   max-width: 292px;
   max-height: calc(100dvh - 10px);
   overflow: visible;
-  padding: clamp(56px, 11dvh, 82px) 0 0;
+  padding: clamp(30px, 6dvh, 52px) 0 0;
   border: none;
   border-radius: 0;
   color: #ffffff;
@@ -897,13 +902,14 @@
 }
 
 .save-panel {
-  padding: clamp(22px, 4dvh, 30px) clamp(22px, 7vw, 30px) clamp(18px, 3dvh, 24px);
+  aspect-ratio: 640 / 1022;
+  padding: clamp(118px, 19dvh, 148px) clamp(38px, 10vw, 50px) clamp(22px, 4dvh, 34px);
+  background-image: url("../assets/ui/panel_simpan_score.png");
 }
 
 .save-score-box {
-  width: min(84%, 168px);
-  min-height: clamp(55px, 8.8dvh, 70px);
-  margin-bottom: clamp(8px, 1.4dvh, 11px);
+  width: min(82%, 162px);
+  margin-bottom: clamp(14px, 2.4dvh, 20px);
 }
 
 .modal-score-label {
@@ -942,17 +948,18 @@
 
 .name-input {
   width: 100%;
-  height: clamp(28px, 5.4dvh, 36px);
-  padding: 0 10px;
-  border-radius: 5px;
+  aspect-ratio: 471 / 81;
+  height: auto;
+  padding: 0 14px;
+  border-radius: 0;
   outline: none;
   color: white;
   font-size: 14px;
   font-weight: 700;
   text-align: center;
-  background: rgba(2, 30, 13, 0.9);
-  border: 2px solid #c9ff62;
-  box-shadow: inset 0 0 12px rgba(65, 255, 105, 0.08);
+  background: url("../assets/ui/inputField_simpanSocore.png") center / 100% 100% no-repeat;
+  border: none;
+  box-shadow: none;
 }
 
 .name-input::placeholder {
@@ -960,14 +967,11 @@
 }
 
 .name-input:focus {
-  border-color: #ffffff;
-  box-shadow:
-    0 0 0 2px rgba(183, 255, 84, 0.22),
-    inset 0 0 12px rgba(65, 255, 105, 0.08);
+  filter: drop-shadow(0 0 8px rgba(202, 255, 100, 0.48));
 }
 
 .email-note {
-  max-width: 190px;
+  max-width: 210px;
   margin: 7px auto 0;
   color: #ffffff;
   font-size: clamp(5px, 1.7vw, 7px);
@@ -994,8 +998,10 @@
 .save-panel .primary-btn,
 .save-panel .secondary-btn {
   width: 100%;
-  min-height: clamp(32px, 5.8dvh, 42px);
+  aspect-ratio: 421 / 87;
+  min-height: 0;
   margin-top: 7px;
+  padding: 0 16px;
   border-radius: 0;
   font-family: "Saira", Arial, Helvetica, sans-serif;
   font-size: clamp(13px, 4vw, 19px);
@@ -1003,21 +1009,18 @@
   font-style: italic;
   font-weight: 900;
   text-transform: uppercase;
-  clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 10px, 100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0 calc(100% - 10px), 0 10px);
+  background: url("../assets/ui/button_bagikan_simpan.png") center / 100% 100% no-repeat;
+  border: none;
+  box-shadow: none;
+  clip-path: none;
 }
 
 .save-panel .primary-btn {
-  color: #0f4a20;
-  background: linear-gradient(180deg, #c5ff68, #4ddb61);
-  border: none;
-  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.22);
+  color: #ffffff;
 }
 
 .save-panel .secondary-btn {
   color: #ffffff;
-  background: rgba(5, 77, 32, 0.92);
-  border: 3px solid #caff64;
-  box-shadow: none;
   font-size: clamp(11px, 3.4vw, 15px);
 }
 
@@ -1149,12 +1152,12 @@
 
   .save-modal-card {
     width: min(76vw, 276px);
-    padding-top: 34px;
+    padding-top: 26px;
   }
 
   .save-panel {
-    padding-top: 19px;
-    padding-bottom: 16px;
+    padding-top: clamp(104px, 18dvh, 128px);
+    padding-bottom: 18px;
   }
 
   .modal-score-value {

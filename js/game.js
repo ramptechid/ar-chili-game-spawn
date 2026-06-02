@@ -1950,6 +1950,7 @@ function openSaveScoreModal() {
   saveMessage.textContent = "";
   saveMessage.className = "save-message";
 
+  resultScreen.classList.add("save-score-open");
   saveScoreModal.classList.remove("hidden");
 
   setTimeout(() => {
@@ -1959,6 +1960,7 @@ function openSaveScoreModal() {
 
 function closeSaveScoreModal() {
   saveScoreModal.classList.add("hidden");
+  resultScreen.classList.remove("save-score-open");
 }
 
 function showAppNotice(title, message) {
