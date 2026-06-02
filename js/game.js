@@ -91,6 +91,11 @@ const scoreText = document.getElementById("scoreText");
 const timerText = document.getElementById("timerText");
 const finalScoreText = document.getElementById("finalScoreText");
 const leaderboardList = document.getElementById("leaderboardList");
+const aimArea = document.querySelector(".aim-area");
+const voiceMeterProgress = document.querySelector(".voice-meter-progress");
+const chiliSlots = Array.from(document.querySelectorAll(".chili-slot"));
+const CHILI_HUD_ACTIVE_SRC = "assets/ui/chili_hud_active.png";
+const CHILI_HUD_INACTIVE_SRC = "assets/ui/chili_hud_inactive.png";
 
 /* =========================
    GAME CONFIG
@@ -276,6 +281,7 @@ let voiceAudioContext = null;
 let voiceAnalyser = null;
 let voiceLoopId = null;
 let lastVoiceCatchAt = 0;
+let voiceMeterResetTimeout = null;
 
 // Device orientation for world-anchoring chilies (fallback mode)
 let orientationActive = false;
@@ -1154,6 +1160,7 @@ function startShoutLoop() {
     }
 
     const rms = Math.sqrt(sum / buffer.length);
+    updateVoiceMeter(rms);
 
     if (rms >= SHOUT_RMS_THRESHOLD) {
       triggerVoiceCatch();
@@ -1171,11 +1178,13 @@ function triggerVoiceCatch() {
   if (!gameRunning || now - lastVoiceCatchAt < VOICE_CATCH_COOLDOWN_MS) return;
 
   lastVoiceCatchAt = now;
+  setVoiceMeterLevel(1);
   catchChiliByMarker();
 }
 
 function stopVoiceCatch() {
   voiceActive = false;
+  setVoiceMeterLevel(0);
 
   if (voiceRecognition) {
     voiceRecognition.onend = null;
@@ -1206,6 +1215,35 @@ function stopVoiceCatch() {
   }
   voiceAudioContext = null;
   voiceAnalyser = null;
+}
+
+function updateVoiceMeter(rms) {
+  const floor = 0.025;
+  const level = clamp((rms - floor) / (SHOUT_RMS_THRESHOLD - floor), 0, 1);
+  setVoiceMeterLevel(level);
+}
+
+function setVoiceMeterLevel(level) {
+  const normalizedLevel = clamp(level, 0, 1);
+
+  if (voiceMeterResetTimeout !== null) {
+    clearTimeout(voiceMeterResetTimeout);
+    voiceMeterResetTimeout = null;
+  }
+
+  if (aimArea) {
+    aimArea.style.setProperty("--voice-level", normalizedLevel.toFixed(3));
+  }
+
+  if (voiceMeterProgress) {
+    voiceMeterProgress.style.strokeDashoffset = (100 - normalizedLevel * 100).toFixed(2);
+  }
+
+  if (normalizedLevel >= 1 && gameRunning) {
+    voiceMeterResetTimeout = setTimeout(() => {
+      if (gameRunning) setVoiceMeterLevel(0);
+    }, 180);
+  }
 }
 
 /* =========================
@@ -1250,7 +1288,7 @@ function resetGameData() {
   scoreSaved = false;
 
   updateScoreText();
-  timerText.textContent = formatElapsedTime(elapsedTime);
+  timerText.textContent = formatHudTime(elapsedTime);
   finalScoreText.textContent = formatElapsedTime(elapsedTime);
 
   topFiveInfo.classList.add("hidden");
@@ -1260,6 +1298,7 @@ function resetGameData() {
 
   gameArea.innerHTML = "";
   resetAimMarker();
+  setVoiceMeterLevel(0);
 
   clearInterval(timerInterval);
   clearSpawnTimers();
@@ -1272,7 +1311,7 @@ function runTimer() {
     if (!gameRunning) return;
 
     elapsedTime++;
-    timerText.textContent = formatElapsedTime(elapsedTime);
+    timerText.textContent = formatHudTime(elapsedTime);
   }, 1000);
 }
 
@@ -1326,6 +1365,7 @@ function endGame() {
 
   gameArea.innerHTML = "";
   resetAimMarker();
+  setVoiceMeterLevel(0);
   gameHud.classList.add("hidden");
 
   finalScoreText.textContent = formatElapsedTime(elapsedTime);
@@ -1368,7 +1408,7 @@ function resetToIntro() {
   scoreSaved = false;
 
   updateScoreText();
-  timerText.textContent = formatElapsedTime(elapsedTime);
+  timerText.textContent = formatHudTime(elapsedTime);
   finalScoreText.textContent = formatElapsedTime(elapsedTime);
 
   topFiveInfo.classList.add("hidden");
@@ -2246,6 +2286,20 @@ function projectXRPoint(worldPos) {
 
 function updateScoreText() {
   scoreText.textContent = `${Math.min(score, TARGET_SCORE)}/${TARGET_SCORE}`;
+
+  chiliSlots.forEach((slot, index) => {
+    const isActive = index < score;
+
+    slot.classList.toggle("active", isActive);
+    slot.src = isActive ? CHILI_HUD_ACTIVE_SRC : CHILI_HUD_INACTIVE_SRC;
+  });
+}
+
+function formatHudTime(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 }
 
 function formatElapsedTime(totalSeconds) {

@@ -4,6 +4,18 @@
   inset: 0;
   z-index: 10;
   pointer-events: none;
+  --voice-level: 0;
+  font-family: "Saira", Arial, Helvetica, sans-serif;
+}
+
+.game-hud::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: url("../assets/ui/BG Hover.png") center / 100% 100% no-repeat;
+  opacity: 0.95;
 }
 
 /* TOP HUD */
@@ -12,53 +24,41 @@
   top: env(safe-area-inset-top, 16px);
   left: 0;
   width: 100%;
-  padding: clamp(12px, 3vw, 22px) clamp(12px, 4vw, 28px) 0;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: clamp(8px, 2vw, 14px);
-  align-items: center;
-  z-index: 10;
-}
-
-.hud-card,
-.timer-card {
-  height: clamp(48px, 8vh, 62px);
-  border-radius: 16px;
-  padding: 8px clamp(12px, 3vw, 18px);
+  padding-top: clamp(18px, 5dvh, 52px);
   display: flex;
-  flex-direction: column;
   justify-content: center;
-  border: 1px solid rgba(198, 255, 118, 0.2);
-  background: rgba(5, 16, 8, 0.52);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  z-index: 2;
 }
 
 .timer-card {
-  min-width: clamp(84px, 22vw, 116px);
+  position: relative;
+  width: clamp(112px, 31vw, 150px);
+  aspect-ratio: 239 / 161;
+  padding: 0 clamp(18px, 5vw, 26px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
-  background: rgba(24, 100, 24, 0.78);
-}
-
-.hud-label {
-  font-size: clamp(9px, 2.2vw, 11px);
-  letter-spacing: 1px;
-  color: rgba(255, 255, 255, 0.74);
-  font-weight: 800;
+  background: url("../assets/ui/timer_frame.png") center / 100% 100% no-repeat;
+  border: none;
+  clip-path: none;
+  box-shadow:
+    0 13px 26px rgba(0, 0, 0, 0.34),
+    0 0 18px rgba(103, 255, 71, 0.16);
 }
 
 .hud-value,
 .timer-value {
-  margin-top: 2px;
-  font-size: clamp(20px, 5vw, 28px);
+  font-size: clamp(28px, 8vw, 38px);
   line-height: 1;
-  color: #ffffff;
-  font-weight: 900;
+  color: #73ff76;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-shadow: 0 0 12px rgba(92, 255, 103, 0.38);
 }
 
 .timer-value {
-  color: #caff72;
+  transform: translateY(-1px);
 }
 
 /* AIM MARKER */
@@ -66,83 +66,159 @@
   position: fixed;
   left: 50%;
   top: 50%;
-  width: clamp(132px, 34vmin, 210px);
-  height: clamp(132px, 34vmin, 210px);
+  width: clamp(236px, 70vmin, 320px);
+  height: clamp(236px, 70vmin, 320px);
   transform: translate(-50%, -50%);
-  z-index: 4;
+  z-index: 2;
   pointer-events: none;
-  opacity: 0.9;
+  opacity: 0.96;
 }
 
-.aim-circle {
-  width: 100%;
-  height: 100%;
-  border: 3px dashed rgba(202, 255, 114, 0.82);
-  border-radius: 50%;
-  box-shadow:
-    0 0 34px rgba(185, 255, 106, 0.32),
-    inset 0 0 30px rgba(185, 255, 106, 0.14);
-  animation: rotateAim 8s linear infinite;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+.target-brackets {
+  position: absolute;
+  inset: 0;
+  background: url("../assets/ui/target_brackets.png") center / 100% 100% no-repeat;
+  filter: drop-shadow(0 0 11px rgba(95, 255, 94, 0.5));
+}
+
+.voice-meter {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 58%;
+  height: 58%;
+  overflow: visible;
+  transform: translate(-50%, -50%) rotate(-96deg);
+  background: url("../assets/ui/voice_meter_track.png") center / 100% 100% no-repeat;
+  filter:
+    drop-shadow(0 0 12px rgba(179, 255, 67, 0.32))
+    drop-shadow(0 7px 14px rgba(0, 0, 0, 0.25));
+}
+
+.voice-meter-progress {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.voice-meter-progress {
+  stroke: url("#voiceMeterGradient");
+  stroke-width: 8;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  transition: stroke-dashoffset 80ms ease-out;
+}
+
+.aim-line {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22%;
+  height: 3px;
+  transform: translateY(-50%);
+  transform-origin: left center;
+  background: linear-gradient(to right, #cfff3d, #0a1a0b);
+  box-shadow: 0 0 11px rgba(211, 255, 59, 0.56);
 }
 
 .aim-dot {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: clamp(12px, 3.5vmin, 18px);
-  height: clamp(12px, 3.5vmin, 18px);
+  width: clamp(9px, 3vmin, 14px);
+  height: clamp(9px, 3vmin, 14px);
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  background: rgba(202, 255, 114, 0.95);
-  box-shadow: 0 0 20px rgba(202, 255, 114, 0.7);
+  background: #d9ff31;
+  box-shadow: 0 0 18px rgba(216, 255, 49, 0.9);
 }
 
-.scan-line {
-  position: absolute;
-  left: 18%;
-  top: 50%;
-  width: 64%;
-  height: 3px;
-  background: linear-gradient(to right, transparent, #caff72, transparent);
-  animation: scanMove 1.5s ease-in-out infinite alternate;
+.aim-area.miss {
+  animation: missShake 0.25s ease-in-out;
 }
 
-.aim-area.miss .aim-circle {
-  border-color: rgba(255, 80, 80, 0.95);
-  box-shadow:
-    0 0 34px rgba(255, 80, 80, 0.35),
-    inset 0 0 28px rgba(255, 80, 80, 0.14);
-  animation:
-    rotateAim 8s linear infinite,
-    missShake 0.25s ease-in-out;
+.aim-area.miss .target-brackets,
+.aim-area.miss .voice-meter {
+  filter:
+    hue-rotate(104deg)
+    saturate(1.7)
+    drop-shadow(0 0 11px rgba(255, 80, 80, 0.5));
 }
 
 /* BOTTOM HUD */
 .bottom-hud {
   position: fixed;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 22px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + clamp(22px, 4dvh, 42px));
   left: 0;
   width: 100%;
-  padding: 0 clamp(12px, 4vw, 28px);
-  z-index: 10;
+  padding: 0 clamp(20px, 8vw, 46px);
+  z-index: 2;
   pointer-events: none;
+}
+
+.score-strip {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto clamp(8px, 1.6dvh, 14px);
+  display: flex;
+  align-items: flex-end;
+  gap: clamp(4px, 1.2vw, 8px);
+}
+
+.score-strip .hud-value {
+  min-width: clamp(68px, 18vw, 88px);
+  color: #ffffff;
+  font-size: clamp(42px, 13vw, 62px);
+  line-height: 0.8;
+  text-align: right;
+  text-shadow: 0 4px 14px rgba(0, 0, 0, 0.42);
+}
+
+.chili-slots {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: end;
+  gap: clamp(0px, 1vw, 5px);
+}
+
+.chili-slot {
+  width: 100%;
+  aspect-ratio: 144 / 176;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 4px 0 rgba(0, 0, 0, 0.28));
+  opacity: 0.96;
+}
+
+.chili-slot.active {
+  filter:
+    drop-shadow(0 4px 0 rgba(0, 0, 0, 0.28))
+    drop-shadow(0 0 14px rgba(179, 255, 60, 0.38));
+  opacity: 1;
 }
 
 .hint-box {
   width: 100%;
-  max-width: 520px;
+  max-width: 420px;
   margin: 0 auto;
-  padding: clamp(8px, 2vw, 12px) clamp(12px, 3vw, 18px);
-  border-radius: 14px;
-  color: rgba(255, 255, 255, 0.9);
+  aspect-ratio: 745 / 106;
+  padding: 0 clamp(28px, 8vw, 42px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
   text-align: center;
-  font-weight: 700;
-  font-size: clamp(11px, 2.8vw, 13px);
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(202, 255, 114, 0.14);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  font-weight: 600;
+  font-size: clamp(12px, 3.1vw, 14px);
+  line-height: 1.12;
+  background: url("../assets/ui/hint_panel_frame.png") center / 100% 100% no-repeat;
+  border: none;
+  clip-path: none;
+  box-shadow:
+    0 12px 24px rgba(0, 0, 0, 0.28),
+    0 0 14px rgba(103, 255, 71, 0.12);
 }
 
 .catch-btn {
@@ -745,11 +821,9 @@
     padding-top: 10px;
   }
 
-  .hud-card,
   .timer-card {
-    height: 44px;
-    padding-top: 6px;
-    padding-bottom: 6px;
+    min-width: 92px;
+    height: 50px;
   }
 
   .hint-box {
@@ -758,17 +832,21 @@
 
   .aim-area {
     top: 50%;
-    width: clamp(112px, 30vmin, 148px);
-    height: clamp(112px, 30vmin, 148px);
+    width: clamp(150px, 45vmin, 210px);
+    height: clamp(150px, 45vmin, 210px);
   }
 
   .bottom-hud {
     left: auto;
     right: max(12px, env(safe-area-inset-right));
     bottom: max(12px, env(safe-area-inset-bottom));
-    width: min(230px, 32vw);
+    width: min(290px, 40vw);
     padding: 0;
     transform: none;
+  }
+
+  .score-strip {
+    margin-bottom: 0;
   }
 
   .catch-btn {
@@ -805,8 +883,8 @@
   }
 
   .aim-area {
-    width: 155px;
-    height: 155px;
+    width: clamp(212px, 64vmin, 260px);
+    height: clamp(212px, 64vmin, 260px);
   }
 
   .catch-btn {

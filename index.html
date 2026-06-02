@@ -37,27 +37,44 @@
   <div id="gameHud" class="game-hud hidden">
 
     <div class="top-hud">
-      <div class="hud-card">
-        <span class="hud-label">SCORE</span>
-        <span id="scoreText" class="hud-value">0</span>
-      </div>
-
       <div class="timer-card">
-        <span class="hud-label">TIME</span>
-        <span id="timerText" class="timer-value">0</span>
+        <span id="timerText" class="timer-value">00:00</span>
       </div>
     </div>
 
     <!-- TARGET MARKER -->
     <div class="aim-area">
-      <div class="aim-circle"></div>
+      <div class="target-brackets" aria-hidden="true"></div>
+
+      <svg class="voice-meter" viewBox="0 0 120 120" aria-hidden="true">
+        <defs>
+          <linearGradient id="voiceMeterGradient" x1="18" y1="100" x2="104" y2="22" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#51e66b" />
+            <stop offset="0.55" stop-color="#bcff42" />
+            <stop offset="1" stop-color="#f3ff66" />
+          </linearGradient>
+        </defs>
+        <circle class="voice-meter-progress" cx="60" cy="60" r="39" pathLength="100" />
+      </svg>
+
+      <div class="aim-line"></div>
       <div class="aim-dot"></div>
-      <div class="scan-line"></div>
     </div>
 
     <div class="bottom-hud">
+      <div class="score-strip" aria-label="Cabe terkumpul">
+        <div id="scoreText" class="hud-value">0/5</div>
+        <div class="chili-slots" aria-hidden="true">
+          <img src="assets/ui/chili_hud_inactive.png" alt="" class="chili-slot" />
+          <img src="assets/ui/chili_hud_inactive.png" alt="" class="chili-slot" />
+          <img src="assets/ui/chili_hud_inactive.png" alt="" class="chili-slot" />
+          <img src="assets/ui/chili_hud_inactive.png" alt="" class="chili-slot" />
+          <img src="assets/ui/chili_hud_inactive.png" alt="" class="chili-slot" />
+        </div>
+      </div>
+
       <div class="hint-box">
-        Arahkan bidikan ke cabe hijau, lalu ucapkan "ijo"!
+        Gerakkan HP-mu untuk mencari, arahkan targetnya, lalu teriakkan: "IJO!"
       </div>
 
       <button id="catchBtn" class="catch-btn hidden" aria-hidden="true" tabindex="-1"></button>
@@ -103,7 +120,7 @@
       <div class="how-to-box home-panel">
         <p class="intro-desc">
           Temukan cabe ijo yang tersembunyi di antara objek di sekitarmu. 
-          Gerakkan HP-mu untuk mencari, arahkan targetnya, lalu teriakkan: ‘IJO!’
+          Gerakkan HP-mu untuk mencari, arahkan targetnya, lalu teriakkan: "IJO!"
         </p>
         <img
           src="assets/ui/line_header_panel_petunjuk.png"
