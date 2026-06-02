@@ -2043,7 +2043,7 @@ async function shareScoreImage() {
   try {
     closeAppNotice();
 
-    const resultTime = formatElapsedTime(elapsedTime);
+    const resultTime = formatHudTime(elapsedTime);
     const imageBlob = await createScoreImageBlob(resultTime);
 
     const file = new File(
@@ -2101,62 +2101,46 @@ function isShareCancelError(error) {
 }
 
 function createScoreImageBlob(scoreValue) {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     const canvas = document.createElement("canvas");
 
-    canvas.width = 1080;
-    canvas.height = 1920;
+    canvas.width = 864;
+    canvas.height = 1921;
 
     const ctx = canvas.getContext("2d");
 
-    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, "#1c5a21");
-    gradient.addColorStop(0.5, "#071a0b");
-    gradient.addColorStop(1, "#020502");
+    try {
+      const [background, logo, durationFrame, footer] = await Promise.all([
+        loadImage("assets/ui/bg_share_result.png"),
+        loadImage("assets/ui/logo_share_result.png"),
+        loadImage("assets/ui/frame_durasi_share.png"),
+        loadImage("assets/ui/footer_share.png")
+      ]);
 
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
 
-    ctx.fillStyle = "rgba(202, 255, 114, 0.12)";
-    ctx.beginPath();
-    ctx.arc(540, 360, 330, 0, Math.PI * 2);
-    ctx.fill();
+      drawImageContain(ctx, logo, 48, 150, 720, 720);
+      drawImageContain(ctx, durationFrame, 151, 965, 562, 285);
+      drawImageContain(ctx, footer, 187, 1482, 490, 120);
 
-    ctx.fillStyle = "rgba(202, 255, 114, 0.08)";
-    ctx.beginPath();
-    ctx.arc(130, 1600, 290, 0, Math.PI * 2);
-    ctx.fill();
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#70ff70";
+      ctx.font = "900 142px Saira, Arial, Helvetica, sans-serif";
+      ctx.textBaseline = "middle";
+      ctx.fillText(scoreValue.toString(), 432, 1128);
 
-    ctx.font = "900 76px Arial";
-    ctx.fillStyle = "#caff72";
-    ctx.textAlign = "center";
-    ctx.fillText("GREEN CHILI HUNT", 540, 320);
-
-    ctx.font = "400 44px Arial";
-    ctx.fillStyle = "rgba(255, 255, 255, 0.78)";
-    ctx.fillText(`Time to collect ${TARGET_SCORE} chilies`, 540, 545);
-
-    ctx.font = "900 230px Arial";
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(scoreValue.toString(), 540, 815);
-
-    drawChiliIcon(ctx, 540, 1065);
-
-    ctx.font = "500 44px Arial";
-    ctx.fillStyle = "rgba(255, 255, 255, 0.84)";
-    ctx.fillText("Can you beat my time?", 540, 1290);
-
-    ctx.fillStyle = "rgba(255, 255, 255, 0.12)";
-    roundRect(ctx, 150, 1420, 780, 145, 42);
-    ctx.fill();
-
-    ctx.font = "700 38px Arial";
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText("Play now and collect green chilies!", 540, 1508);
-
-    ctx.font = "400 30px Arial";
-    ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
-    ctx.fillText("Share your score", 540, 1695);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "italic 900 34px Saira, Arial, Helvetica, sans-serif";
+      ctx.fillText("YAKIN BISA LEBIH CEPET?", 432, 1432);
+    } catch (error) {
+      console.error("Share template render error:", error);
+      ctx.fillStyle = "#041006";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#70ff70";
+      ctx.font = "900 96px Arial";
+      ctx.textAlign = "center";
+      ctx.fillText(scoreValue.toString(), canvas.width / 2, canvas.height / 2);
+    }
 
     canvas.toBlob((blob) => {
       resolve(blob);
@@ -2164,33 +2148,23 @@ function createScoreImageBlob(scoreValue) {
   });
 }
 
-function drawChiliIcon(ctx, x, y) {
-  ctx.save();
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = src;
+  });
+}
 
-  ctx.translate(x, y);
-  ctx.rotate(-0.35);
+function drawImageContain(ctx, image, x, y, width, height) {
+  const scale = Math.min(width / image.width, height / image.height);
+  const drawWidth = image.width * scale;
+  const drawHeight = image.height * scale;
+  const drawX = x + (width - drawWidth) / 2;
+  const drawY = y + (height - drawHeight) / 2;
 
-  ctx.fillStyle = "#55e85b";
-  ctx.beginPath();
-  ctx.moveTo(-115, 40);
-  ctx.bezierCurveTo(-40, 110, 95, 60, 115, -35);
-  ctx.bezierCurveTo(30, 25, -35, 15, -115, 40);
-  ctx.fill();
-
-  ctx.fillStyle = "rgba(255,255,255,0.35)";
-  ctx.beginPath();
-  ctx.ellipse(20, -5, 55, 18, -0.2, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.strokeStyle = "#8ad34a";
-  ctx.lineWidth = 18;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(-20, -30);
-  ctx.quadraticCurveTo(-30, -95, 35, -115);
-  ctx.stroke();
-
-  ctx.restore();
+  ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
 }
 
 function downloadScoreImage(blob) {
@@ -2238,25 +2212,6 @@ function isIjoCommand(text) {
 
 function isAndroidDevice() {
   return /Android/i.test(navigator.userAgent);
-}
-
-function roundRect(ctx, x, y, width, height, radius) {
-  ctx.beginPath();
-  ctx.moveTo(x + radius, y);
-  ctx.lineTo(x + width - radius, y);
-  ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
-  ctx.lineTo(x + width, y + height - radius);
-  ctx.quadraticCurveTo(
-    x + width,
-    y + height,
-    x + width - radius,
-    y + height
-  );
-  ctx.lineTo(x + radius, y + height);
-  ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
-  ctx.lineTo(x, y + radius);
-  ctx.quadraticCurveTo(x, y, x + radius, y);
-  ctx.closePath();
 }
 
 function getDistance(x1, y1, x2, y2) {
