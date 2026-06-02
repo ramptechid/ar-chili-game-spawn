@@ -770,7 +770,7 @@
   font-size: clamp(14px, 4.3vw, 21px);
   line-height: 1;
   font-weight: 900;
-  transform: translateY(-1px);
+  transform: translate(-4px, -1px);
 }
 
 .leaderboard-name {
