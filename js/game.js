@@ -2104,8 +2104,8 @@ function createScoreImageBlob(scoreValue) {
   return new Promise(async (resolve) => {
     const canvas = document.createElement("canvas");
 
-    canvas.width = 864;
-    canvas.height = 1921;
+    canvas.width = 1080;
+    canvas.height = 1920;
 
     const ctx = canvas.getContext("2d");
 
@@ -2117,21 +2117,24 @@ function createScoreImageBlob(scoreValue) {
         loadImage("assets/ui/footer_share.png")
       ]);
 
-      ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#020803";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      drawImageContain(ctx, logo, 48, 150, 720, 720);
-      drawImageContain(ctx, durationFrame, 151, 965, 562, 285);
-      drawImageContain(ctx, footer, 187, 1482, 490, 120);
+      drawImageContain(ctx, background, 108, 0, 864, 1920);
+
+      drawImageContain(ctx, logo, 187, 150, 706, 630);
+      drawImageContain(ctx, durationFrame, 259, 958, 562, 285);
+      drawImageContain(ctx, footer, 295, 1482, 490, 120);
 
       ctx.textAlign = "center";
       ctx.fillStyle = "#70ff70";
       ctx.font = "900 142px Saira, Arial, Helvetica, sans-serif";
       ctx.textBaseline = "middle";
-      ctx.fillText(scoreValue.toString(), 432, 1128);
+      ctx.fillText(scoreValue.toString(), 540, 1128);
 
       ctx.fillStyle = "#ffffff";
       ctx.font = "italic 900 34px Saira, Arial, Helvetica, sans-serif";
-      ctx.fillText("YAKIN BISA LEBIH CEPET?", 432, 1432);
+      ctx.fillText("YAKIN BISA LEBIH CEPET?", 540, 1432);
     } catch (error) {
       console.error("Share template render error:", error);
       ctx.fillStyle = "#041006";
