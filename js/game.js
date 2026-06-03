@@ -1260,7 +1260,7 @@ function setBrowserScreen(screen, mode = "replace") {
   }
 }
 
-function handleBrowserBack() {
+function handleBrowserBack(event) {
   if (gameRunning) {
     resetToIntro(false);
     setBrowserScreen("intro", "replace");
@@ -1269,6 +1269,12 @@ function handleBrowserBack() {
 
   if (!saveScoreModal.classList.contains("hidden")) {
     closeSaveScoreModal();
+  }
+
+  const browserScreen = event?.state?.screen;
+
+  if (browserScreen !== "result" || score < TARGET_SCORE) {
+    resetToIntro(false);
   }
 }
 
