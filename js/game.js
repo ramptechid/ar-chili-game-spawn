@@ -116,25 +116,29 @@ const MIN_VISIBLE_CHILIES = 10;
 const VIEW_REFILL_COOLDOWN = 450;
 const OFFSCREEN_EXPIRE_MS = 900;
 const OFFSCREEN_MARGIN = 140;
-const XR_MAX_ACTIVE_OBJECTS = 26;
-const XR_INITIAL_OBJECTS = 18;
+const XR_MAX_ACTIVE_OBJECTS = 24;
+const XR_INITIAL_OBJECTS = 12;
+const XR_MIN_VISIBLE_OBJECTS = 6;
 const XR_INITIAL_SPAWN_DELAY_MIN = 140;
 const XR_INITIAL_SPAWN_DELAY_MAX = 320;
-const XR_SPAWN_DELAY_MIN = 900;
-const XR_SPAWN_DELAY_MAX = 1700;
+const XR_SPAWN_DELAY_MIN = 760;
+const XR_SPAWN_DELAY_MAX = 1350;
 const XR_LIFETIME_MIN = 30000;
 const XR_LIFETIME_MAX = 60000;
-const XR_SIZE_MIN = 0.28;
-const XR_SIZE_MAX = 0.4;
-const XR_DISTANCE_MIN = 3.4;
-const XR_DISTANCE_MAX = 6.4;
-const XR_HEIGHT_MIN = -0.4;
-const XR_HEIGHT_MAX = 0.55;
-const XR_MIN_OBJECT_SPACING = 0.95;
-const XR_SPAWN_ATTEMPTS = 24;
-const XR_TARGET_SPAWN_RATIO = 0.16;
+const XR_SIZE_MIN = 0.24;
+const XR_SIZE_MAX = 0.34;
+const XR_DISTANCE_MIN = 2.4;
+const XR_DISTANCE_MAX = 4.8;
+const XR_HEIGHT_MIN = -0.32;
+const XR_HEIGHT_MAX = 0.28;
+const XR_MIN_OBJECT_SPACING = 0.72;
+const XR_SPAWN_ATTEMPTS = 36;
+const XR_FRONT_SPAWN_ARC = Math.PI / 2.25;
+const XR_NEAR_VIEW_SPAWN_ARC = Math.PI / 3.7;
+const XR_PERIPHERAL_SPAWN_CHANCE = 0.16;
+const XR_TARGET_SPAWN_RATIO = 0.2;
 const XR_MIN_TARGET_OBJECTS = 2;
-const XR_MAX_TARGET_RATIO = 0.24;
+const XR_MAX_TARGET_RATIO = 0.28;
 const XR_CATCH_ANIM_MS = 480;
 const XR_FADEIN_MS = 320;
 const XR_EXPIRE_MS = 520;
@@ -259,6 +263,7 @@ let cameraStream = null;
 let threeRenderer = null;
 let threeScene = null;
 let threeCamera = null;
+let xrHeadLight = null;
 const gltfLoader = new GLTFLoader();
 
 let xrActive = false;
@@ -309,6 +314,7 @@ closeSaveModalBtn.addEventListener("click", closeSaveScoreModal);
 submitScoreBtn.addEventListener("click", submitScore);
 closeAppNoticeBtn.addEventListener("click", closeAppNotice);
 window.addEventListener("popstate", handleBrowserBack);
+window.addEventListener("resize", handleViewportResize);
 
 /* =========================
    DEVICE ORIENTATION (world-anchor chilies)
@@ -532,6 +538,18 @@ function stopCamera() {
   cameraView.srcObject = null;
 }
 
+function handleViewportResize() {
+  if (!threeRenderer) return;
+
+  threeRenderer.setPixelRatio(window.devicePixelRatio);
+  threeRenderer.setSize(window.innerWidth, window.innerHeight, false);
+
+  if (threeCamera) {
+    threeCamera.aspect = window.innerWidth / window.innerHeight;
+    threeCamera.updateProjectionMatrix();
+  }
+}
+
 /* =========================
    WEBXR AR (Three.js)
 ========================= */
@@ -548,6 +566,10 @@ async function startXRSession() {
         antialias: true
       });
       threeRenderer.setPixelRatio(window.devicePixelRatio);
+      threeRenderer.setSize(window.innerWidth, window.innerHeight, false);
+      threeRenderer.outputColorSpace = THREE.SRGBColorSpace;
+      threeRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+      threeRenderer.toneMappingExposure = 1.18;
       threeRenderer.xr.enabled = true;
     }
 
@@ -598,19 +620,27 @@ async function startXRSession() {
 }
 
 function setupThreeLighting() {
-  // Ambient fill — keeps dark-side faces visible
-  const ambientLight = new THREE.AmbientLight(0xffffff, 2.0);
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
   threeScene.add(ambientLight);
 
-  // Key light from upper-right — matches original vertex shader key direction
-  const keyLight = new THREE.DirectionalLight(0xffffff, 2.5);
-  keyLight.position.set(0.35, 0.9, 0.45);
+  const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x4c6b44, 1.4);
+  threeScene.add(hemisphereLight);
+
+  const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
+  keyLight.position.set(1.8, 3.2, 1.6);
   threeScene.add(keyLight);
 
-  // Fill light from left — softens shadows, equivalent to original fill term
-  const fillLight = new THREE.DirectionalLight(0xffffff, 1.0);
-  fillLight.position.set(-0.55, 0.45, -0.25);
+  const fillLight = new THREE.DirectionalLight(0xcfe8ff, 0.85);
+  fillLight.position.set(-2.2, 1.4, -1.4);
   threeScene.add(fillLight);
+
+  const rimLight = new THREE.DirectionalLight(0xeaffd0, 1.05);
+  rimLight.position.set(-0.8, 1.9, 2.4);
+  threeScene.add(rimLight);
+
+  xrHeadLight = new THREE.PointLight(0xffffff, 1.35, 6.5, 1.2);
+  xrHeadLight.position.set(0, 0, 0);
+  threeScene.add(xrHeadLight);
 }
 
 async function loadXRModels() {
@@ -642,7 +672,13 @@ async function loadXRModel(src) {
         const mats = Array.isArray(child.material)
           ? child.material
           : [child.material];
-        mats.forEach((mat) => { mat.transparent = true; });
+        mats.forEach((mat) => {
+          mat.transparent = true;
+          mat.side = THREE.DoubleSide;
+          mat.envMapIntensity = Math.max(mat.envMapIntensity || 0, 1.15);
+          if (mat.map) mat.map.colorSpace = THREE.SRGBColorSpace;
+          mat.needsUpdate = true;
+        });
       });
 
       const group = new THREE.Group();
@@ -663,6 +699,24 @@ function onXRFrame(time, frame) {
 
   // Cache after render — Three.js updates the XR camera inside renderer.render()
   xrLastCamera = threeRenderer.xr.getCamera();
+  updateXRHeadLight();
+  maintainXRSpawnDensity(time);
+}
+
+function updateXRHeadLight() {
+  if (!xrHeadLight || !xrLastCamera) return;
+
+  const matrix = xrLastCamera.matrixWorld.elements;
+  xrHeadLight.position.set(matrix[12], matrix[13] + 0.08, matrix[14]);
+}
+
+function maintainXRSpawnDensity(time) {
+  if (!gameRunning || !xrActive || !xrLastCamera) return;
+  if (getActiveXRObjectCount() >= XR_MAX_ACTIVE_OBJECTS) return;
+
+  if (getVisibleXRObjectCount() < XR_MIN_VISIBLE_OBJECTS) {
+    refillXRCurrentView(time);
+  }
 }
 
 function updateXRObjectAnimations() {
@@ -725,12 +779,18 @@ function spawnXRObject(nearView = false) {
         const c = m.clone();
         c.transparent = true;
         c.opacity = 0;
+        c.side = THREE.DoubleSide;
+        c.envMapIntensity = Math.max(c.envMapIntensity || 0, 1.15);
+        c.needsUpdate = true;
         return c;
       });
     } else {
       child.material = child.material.clone();
       child.material.transparent = true;
       child.material.opacity = 0;
+      child.material.side = THREE.DoubleSide;
+      child.material.envMapIntensity = Math.max(child.material.envMapIntensity || 0, 1.15);
+      child.material.needsUpdate = true;
     }
   });
 
@@ -768,11 +828,13 @@ function getXRSpawnPose(cameraMatrix, cameraPosition, nearView = false) {
   const right = [forward[1], -forward[0]];
   let bestPose = null;
   let bestSpacing = -Infinity;
+  const spawnArc = nearView ? XR_NEAR_VIEW_SPAWN_ARC : XR_FRONT_SPAWN_ARC;
 
   for (let i = 0; i < XR_SPAWN_ATTEMPTS; i++) {
-    const localAngle = nearView
-      ? randF(-Math.PI / 2.6, Math.PI / 2.6)
-      : randF(0, Math.PI * 2);
+    const usePeripheral = !nearView && Math.random() < XR_PERIPHERAL_SPAWN_CHANCE;
+    const localAngle = usePeripheral
+      ? randF(-Math.PI, Math.PI)
+      : randF(-spawnArc, spawnArc);
     const distance = randF(XR_DISTANCE_MIN, XR_DISTANCE_MAX);
     const direction = [
       forward[0] * Math.cos(localAngle) + right[0] * Math.sin(localAngle),
@@ -904,7 +966,7 @@ function refillXRCurrentView(time) {
   if (getActiveXRObjectCount() >= XR_MAX_ACTIVE_OBJECTS) return;
 
   xrLastRefillAt = time;
-  spawnXRObject(false);
+  spawnXRObject(true);
 }
 
 function getActiveXRObjectCount() {
@@ -1000,7 +1062,7 @@ function runXRSpawner() {
   for (let i = 0; i < XR_INITIAL_OBJECTS; i++) {
     const timeoutId = setTimeout(() => {
       xrInitialSpawnTimeouts = xrInitialSpawnTimeouts.filter((id) => id !== timeoutId);
-      if (gameRunning && xrActive) spawnXRObject(false);
+      if (gameRunning && xrActive) spawnXRObject(i < XR_MIN_VISIBLE_OBJECTS);
     }, initialDelay);
     xrInitialSpawnTimeouts.push(timeoutId);
 
