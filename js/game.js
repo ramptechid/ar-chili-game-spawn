@@ -102,7 +102,7 @@ const CHILI_HUD_INACTIVE_SRC = "assets/ui/chili_hud_inactive.png";
 
 const TARGET_SCORE        = 5;
 const PLAY_AGAIN_COOLDOWN = 5;
-const WEBXR_ONLY_MODE = true;
+const WEBXR_ONLY_MODE = false;
 const CHILI_LIFETIME_MIN  = 3600;
 const CHILI_LIFETIME_MAX  = 12500;
 const CHILI_EXPIRE_STAGGER_MIN = 460;
@@ -328,7 +328,7 @@ window.addEventListener("resize", handleViewportResize);
 
 async function startOrientationTracking() {
   if (WEBXR_ONLY_MODE) return false;
-  if (orientationActive) return;
+  if (orientationActive) return true;
 
   // iOS 13+ requires explicit permission
   if (
@@ -337,9 +337,9 @@ async function startOrientationTracking() {
   ) {
     try {
       const perm = await DeviceOrientationEvent.requestPermission();
-      if (perm !== "granted") return;
+      if (perm !== "granted") return false;
     } catch (e) {
-      return;
+      return false;
     }
   }
 
@@ -347,6 +347,7 @@ async function startOrientationTracking() {
   baseGamma = null;
   baseBeta = null;
   window.addEventListener("deviceorientation", handleOrientation, true);
+  return true;
 }
 
 function stopOrientationTracking() {
@@ -564,6 +565,12 @@ async function startXRSession() {
   if (!navigator.xr || !xrCanvas) return false;
 
   try {
+    if (typeof navigator.xr.isSessionSupported === "function") {
+      const immersiveARSupported = await navigator.xr.isSessionSupported("immersive-ar");
+
+      if (!immersiveARSupported) return false;
+    }
+
     // Create renderer once and reuse across sessions
     if (!threeRenderer) {
       threeRenderer = new THREE.WebGLRenderer({
@@ -1425,12 +1432,9 @@ async function startGame() {
   stopCamera();
 
   const xrReady = await startXRSession();
+  const fallbackReady = xrReady ? false : await startFallbackARSession();
 
-  if (!xrReady) {
-    showAppNotice(
-      "WebXR AR Required",
-      "This hunt now runs in real WebXR AR only. Open it on Android Chrome through HTTPS, then allow AR/camera access."
-    );
+  if (!xrReady && !fallbackReady) {
     return;
   }
 
@@ -1450,7 +1454,28 @@ async function startGame() {
   startVoiceCatch();
   runTimer();
 
-  runXRSpawner();
+  if (xrReady) {
+    runXRSpawner();
+  } else {
+    runSpawner();
+  }
+}
+
+async function startFallbackARSession() {
+  const cameraReady = await startCamera();
+
+  if (!cameraReady) return false;
+
+  const orientationReady = await startOrientationTracking();
+
+  if (!orientationReady && isIOSDevice()) {
+    showAppNotice(
+      "Motion Access Needed",
+      "Allow Motion & Orientation access in Safari so the hunt can follow where you move your phone."
+    );
+  }
+
+  return true;
 }
 
 function resetGameData() {
@@ -2399,6 +2424,11 @@ function isIjoCommand(text) {
 
 function isAndroidDevice() {
   return /Android/i.test(navigator.userAgent);
+}
+
+function isIOSDevice() {
+  return /iPad|iPhone|iPod/i.test(navigator.userAgent) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
 
 function getDistance(x1, y1, x2, y2) {
