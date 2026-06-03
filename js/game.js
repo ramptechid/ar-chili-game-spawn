@@ -578,7 +578,14 @@ async function startXRSession() {
 
     xrSession.addEventListener("end", () => {
       stopXRSession(false);
-      if (gameRunning) endGame();
+      if (!gameRunning) return;
+
+      if (score >= TARGET_SCORE) {
+        endGame();
+        return;
+      }
+
+      resetToIntro(false);
     });
 
     threeRenderer.setAnimationLoop(onXRFrame);
@@ -1385,6 +1392,11 @@ function clearSpawnTimers() {
 
 function endGame() {
   if (!gameRunning) return;
+
+  if (score < TARGET_SCORE) {
+    resetToIntro();
+    return;
+  }
 
   gameRunning = false;
 
