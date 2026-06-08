@@ -285,6 +285,15 @@ let arRenderMode = "none";
 let camera3DActive = false;
 const centerRaycaster = new THREE.Raycaster();
 const centerScreenPoint = new THREE.Vector2(0, 0);
+const deviceOrientationEuler = new THREE.Euler();
+const deviceOrientationQ0 = new THREE.Quaternion();
+const deviceOrientationQ1 = new THREE.Quaternion(
+  -Math.sqrt(0.5),
+  0,
+  0,
+  Math.sqrt(0.5)
+);
+const deviceOrientationZee = new THREE.Vector3(0, 0, 1);
 
 // Voice state
 let voiceActive = false;
@@ -309,6 +318,7 @@ let smoothBeta    = 0;
 let smoothAlpha   = 0;
 let orientLoopId  = null;
 let hasAlphaReading = false;
+let screenOrientationAngle = getScreenOrientationAngle();
 
 document.body.classList.add("intro-mode");
 setBrowserScreen("intro", "replace");
@@ -354,7 +364,9 @@ async function startOrientationTracking() {
   baseBeta = null;
   baseAlpha = null;
   hasAlphaReading = false;
+  screenOrientationAngle = getScreenOrientationAngle();
   window.addEventListener("deviceorientation", handleOrientation, true);
+  window.addEventListener("orientationchange", handleScreenOrientationChange, true);
   return true;
 }
 
@@ -362,6 +374,7 @@ function stopOrientationTracking() {
   if (!orientationActive) return;
   orientationActive = false;
   window.removeEventListener("deviceorientation", handleOrientation, true);
+  window.removeEventListener("orientationchange", handleScreenOrientationChange, true);
   if (orientLoopId !== null) {
     cancelAnimationFrame(orientLoopId);
     orientLoopId = null;
@@ -373,8 +386,6 @@ function stopOrientationTracking() {
 }
 
 function handleOrientation(event) {
-  if (!gameRunning) return;
-
   const gamma = event.gamma ?? 0;
   const beta  = event.beta  ?? 0;
   const alpha = event.alpha ?? 0;
@@ -399,6 +410,10 @@ function handleOrientation(event) {
   rawBeta  = beta;
   rawAlpha = alpha;
   hasAlphaReading = hasAlphaReading || event.alpha !== null;
+}
+
+function handleScreenOrientationChange() {
+  screenOrientationAngle = getScreenOrientationAngle();
 }
 
 function startOrientationLoop() {
@@ -605,10 +620,10 @@ function setupThreeRenderer(enableXR) {
 function setupThreeScene() {
   threeScene = new THREE.Scene();
   threeCamera = new THREE.PerspectiveCamera(
-    70,
+    75,
     window.innerWidth / window.innerHeight,
     0.01,
-    20
+    1000
   );
 
   setupThreeLighting();
@@ -710,7 +725,7 @@ async function startCamera3DSession() {
 function onCamera3DFrame(time) {
   if (!camera3DActive || !threeRenderer || !threeScene || !threeCamera) return;
 
-  if (orientationActive && baseGamma !== null) {
+  if (orientationActive) {
     updateCamera3DFromOrientation();
   } else {
     threeCamera.updateMatrixWorld(true);
@@ -727,17 +742,18 @@ function onCamera3DFrame(time) {
 function updateCamera3DFromOrientation() {
   if (!camera3DActive || !threeCamera) return;
 
-  const gammaDelta = baseGamma === null ? 0 : smoothGamma - baseGamma;
-  const betaDelta = baseBeta === null ? 0 : smoothBeta - baseBeta;
-  const alphaDelta = hasAlphaReading && baseAlpha !== null
-    ? getCompassDelta(baseAlpha, smoothAlpha)
-    : gammaDelta;
+  const alpha = THREE.MathUtils.degToRad(hasAlphaReading ? rawAlpha : 0);
+  const beta = THREE.MathUtils.degToRad(rawBeta);
+  const gamma = THREE.MathUtils.degToRad(rawGamma);
+  const orient = THREE.MathUtils.degToRad(screenOrientationAngle);
 
-  const yaw = THREE.MathUtils.degToRad(clamp(-alphaDelta * 0.9, -85, 85));
-  const pitch = THREE.MathUtils.degToRad(clamp(-betaDelta * 0.75, -55, 55));
-  const roll = THREE.MathUtils.degToRad(clamp(-gammaDelta * 0.18, -14, 14));
+  deviceOrientationEuler.set(beta, alpha, -gamma, "YXZ");
+  threeCamera.quaternion.setFromEuler(deviceOrientationEuler);
+  threeCamera.quaternion.multiply(deviceOrientationQ1);
+  threeCamera.quaternion.multiply(
+    deviceOrientationQ0.setFromAxisAngle(deviceOrientationZee, -orient)
+  );
 
-  threeCamera.rotation.set(pitch, yaw, roll, "YXZ");
   threeCamera.updateProjectionMatrix();
   threeCamera.updateMatrixWorld(true);
   xrLastCamera = threeCamera;
@@ -928,7 +944,7 @@ function spawnXRObject(nearView = false) {
     }
   });
 
-  const size = randF(XR_SIZE_MIN, XR_SIZE_MAX);
+  const size = camera3DActive ? randF(0.78, 1.05) : randF(XR_SIZE_MIN, XR_SIZE_MAX);
   mesh.scale.setScalar(size);
   mesh.position.set(
     spawnPose.position[0],
@@ -947,7 +963,9 @@ function spawnXRObject(nearView = false) {
     size,
     yaw: spawnPose.yaw,
     createdAt: now,
-    lifetime: randomNumber(XR_LIFETIME_MIN, XR_LIFETIME_MAX),
+    lifetime: camera3DActive
+      ? randomNumber(3000, 8000)
+      : randomNumber(XR_LIFETIME_MIN, XR_LIFETIME_MAX),
     caught: false,
     catching: false,
     expiring: false,
@@ -1002,27 +1020,11 @@ function getXRSpawnPose(cameraMatrix, cameraPosition, asset, nearView = false) {
 }
 
 function getCamera3DSpawnPose(cameraPosition, nearView = false) {
-  const candidates = spawnObjects(XR_SPAWN_ATTEMPTS);
   let bestPose = null;
   let bestSpacing = -Infinity;
 
-  for (const candidate of candidates) {
-    const distanceScale = nearView ? 0.46 : 0.82;
-    const position = [
-      candidate.x * distanceScale,
-      clamp(candidate.y * 0.08, XR_HEIGHT_MIN, XR_HEIGHT_MAX),
-      -Math.abs(candidate.z * distanceScale) - XR_DISTANCE_MIN
-    ];
-
-    const distanceFromPlayer = Math.sqrt(
-      (position[0] - cameraPosition[0]) ** 2 +
-      (position[2] - cameraPosition[2]) ** 2
-    );
-
-    if (distanceFromPlayer < XR_DISTANCE_MIN || distanceFromPlayer > XR_DISTANCE_MAX + 1.4) {
-      continue;
-    }
-
+  for (let i = 0; i < XR_SPAWN_ATTEMPTS; i++) {
+    const position = getCamera3DWorldPosition(cameraPosition, nearView);
     const spacing = getNearestXRObjectDistance(position);
     const faceDirection = [
       position[0] - cameraPosition[0],
@@ -1044,6 +1046,19 @@ function getCamera3DSpawnPose(cameraPosition, nearView = false) {
   }
 
   return bestSpacing > XR_MIN_OBJECT_SPACING * 0.62 ? bestPose : null;
+}
+
+function getCamera3DWorldPosition(cameraPosition, nearView = false) {
+  const distance = nearView ? randF(4, 8) : randF(8, 20);
+  const theta = Math.random() * Math.PI * 2;
+  const phi = (Math.random() - 0.5) * Math.PI * 0.4;
+  const horizontalDistance = distance * Math.cos(phi);
+
+  return [
+    cameraPosition[0] + horizontalDistance * Math.cos(theta),
+    cameraPosition[1] + clamp(distance * Math.sin(phi), -2, 6),
+    cameraPosition[2] + horizontalDistance * Math.sin(theta)
+  ];
 }
 
 function getXRCamouflageSpawnPose(cameraMatrix, cameraPosition, asset, nearView = false) {
@@ -2690,6 +2705,18 @@ function getDistance(x1, y1, x2, y2) {
   const dy = y2 - y1;
 
   return Math.sqrt(dx * dx + dy * dy);
+}
+
+function getScreenOrientationAngle() {
+  if (screen.orientation && typeof screen.orientation.angle === "number") {
+    return screen.orientation.angle;
+  }
+
+  if (typeof window.orientation === "number") {
+    return window.orientation;
+  }
+
+  return 0;
 }
 
 // Projects a world-space point [x,y,z] to NDC using the cached XR camera.
