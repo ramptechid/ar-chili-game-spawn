@@ -282,6 +282,8 @@ let xrSpawnInterval = null;
 let xrSpawnTimeout = null;
 let xrInitialSpawnTimeouts = [];
 let nextXRExpireAt = 0;
+let arRenderMode = "none";
+let camera3DActive = false;
 
 // Voice state
 let voiceActive = false;
@@ -297,11 +299,15 @@ let voiceMeterResetTimeout = null;
 let orientationActive = false;
 let baseGamma     = null;
 let baseBeta      = null;
+let baseAlpha     = null;
 let rawGamma      = 0;
 let rawBeta       = 0;
+let rawAlpha      = 0;
 let smoothGamma   = 0;
 let smoothBeta    = 0;
+let smoothAlpha   = 0;
 let orientLoopId  = null;
+let hasAlphaReading = false;
 
 document.body.classList.add("intro-mode");
 setBrowserScreen("intro", "replace");
@@ -346,6 +352,8 @@ async function startOrientationTracking() {
   orientationActive = true;
   baseGamma = null;
   baseBeta = null;
+  baseAlpha = null;
+  hasAlphaReading = false;
   window.addEventListener("deviceorientation", handleOrientation, true);
   return true;
 }
@@ -360,6 +368,8 @@ function stopOrientationTracking() {
   }
   baseGamma = null;
   baseBeta  = null;
+  baseAlpha = null;
+  hasAlphaReading = false;
 }
 
 function handleOrientation(event) {
@@ -367,21 +377,28 @@ function handleOrientation(event) {
 
   const gamma = event.gamma ?? 0;
   const beta  = event.beta  ?? 0;
+  const alpha = event.alpha ?? 0;
 
   if (baseGamma === null) {
     // First reading — set baseline and seed smoother at this value
     baseGamma   = gamma;
     baseBeta    = beta;
+    baseAlpha   = alpha;
     smoothGamma = gamma;
     smoothBeta  = beta;
+    smoothAlpha = alpha;
     rawGamma    = gamma;
     rawBeta     = beta;
+    rawAlpha    = alpha;
+    hasAlphaReading = event.alpha !== null;
     startOrientationLoop();
     return;
   }
 
   rawGamma = gamma;
   rawBeta  = beta;
+  rawAlpha = alpha;
+  hasAlphaReading = hasAlphaReading || event.alpha !== null;
 }
 
 function startOrientationLoop() {
@@ -396,8 +413,15 @@ function startOrientationLoop() {
     // Exponential moving average — smooths out sensor noise
     smoothGamma = smoothAngle(smoothGamma, rawGamma);
     smoothBeta  = smoothAngle(smoothBeta, rawBeta);
+    if (hasAlphaReading) {
+      smoothAlpha = smoothCompassAngle(smoothAlpha, rawAlpha);
+    }
 
-    repositionChilies();
+    if (camera3DActive) {
+      updateCamera3DFromOrientation();
+    } else {
+      repositionChilies();
+    }
     orientLoopId = requestAnimationFrame(loop);
   }
 
@@ -561,6 +585,35 @@ function handleViewportResize() {
    WEBXR AR (Three.js)
 ========================= */
 
+function setupThreeRenderer(enableXR) {
+  if (!threeRenderer) {
+    threeRenderer = new THREE.WebGLRenderer({
+      canvas: xrCanvas,
+      alpha: true,
+      antialias: true
+    });
+    threeRenderer.outputColorSpace = THREE.SRGBColorSpace;
+    threeRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+    threeRenderer.toneMappingExposure = 1.18;
+  }
+
+  threeRenderer.setPixelRatio(window.devicePixelRatio);
+  threeRenderer.setSize(window.innerWidth, window.innerHeight, false);
+  threeRenderer.xr.enabled = enableXR;
+}
+
+function setupThreeScene() {
+  threeScene = new THREE.Scene();
+  threeCamera = new THREE.PerspectiveCamera(
+    70,
+    window.innerWidth / window.innerHeight,
+    0.01,
+    20
+  );
+
+  setupThreeLighting();
+}
+
 async function startXRSession() {
   if (!navigator.xr || !xrCanvas) return false;
 
@@ -571,31 +624,8 @@ async function startXRSession() {
       if (!immersiveARSupported) return false;
     }
 
-    // Create renderer once and reuse across sessions
-    if (!threeRenderer) {
-      threeRenderer = new THREE.WebGLRenderer({
-        canvas: xrCanvas,
-        alpha: true,
-        antialias: true
-      });
-      threeRenderer.setPixelRatio(window.devicePixelRatio);
-      threeRenderer.setSize(window.innerWidth, window.innerHeight, false);
-      threeRenderer.outputColorSpace = THREE.SRGBColorSpace;
-      threeRenderer.toneMapping = THREE.ACESFilmicToneMapping;
-      threeRenderer.toneMappingExposure = 1.18;
-      threeRenderer.xr.enabled = true;
-    }
-
-    // Fresh scene each session
-    threeScene = new THREE.Scene();
-    threeCamera = new THREE.PerspectiveCamera(
-      70,
-      window.innerWidth / window.innerHeight,
-      0.01,
-      20
-    );
-
-    setupThreeLighting();
+    setupThreeRenderer(true);
+    setupThreeScene();
 
     xrSession = await navigator.xr.requestSession("immersive-ar", {
       optionalFeatures: ["dom-overlay", "local-floor"],
@@ -609,7 +639,10 @@ async function startXRSession() {
     xrObjects = [];
     xrLastCamera = null;
     xrActive = true;
+    camera3DActive = false;
+    arRenderMode = "webxr";
     document.body.classList.add("xr-mode");
+    document.body.classList.remove("camera-3d-mode");
 
     xrSession.addEventListener("end", () => {
       stopXRSession(false);
@@ -630,6 +663,84 @@ async function startXRSession() {
     stopXRSession(false);
     return false;
   }
+}
+
+async function startCamera3DSession() {
+  const orientationReady = await startOrientationTracking();
+  const cameraReady = await startCamera();
+
+  if (!cameraReady && orientationReady) {
+    stopOrientationTracking();
+  }
+
+  if (!cameraReady) return false;
+
+  try {
+    setupThreeRenderer(false);
+    setupThreeScene();
+
+    await loadXRModels();
+
+    xrObjects = [];
+    xrLastCamera = threeCamera;
+    xrActive = true;
+    camera3DActive = true;
+    arRenderMode = "camera3d";
+
+    document.body.classList.add("camera-3d-mode");
+    document.body.classList.remove("xr-mode");
+
+    if (!orientationReady && isIOSDevice()) {
+      showAppNotice(
+        "Motion Access Needed",
+        "Izinkan akses Motion & Orientation di Safari supaya objek 3D mengikuti gerakan HP."
+      );
+    }
+
+    updateCamera3DFromOrientation();
+    threeRenderer.setAnimationLoop(onCamera3DFrame);
+    return true;
+  } catch (error) {
+    console.warn("Camera 3D AR unavailable:", error);
+    stopXRSession(false);
+    return false;
+  }
+}
+
+function onCamera3DFrame(time) {
+  if (!camera3DActive || !threeRenderer || !threeScene || !threeCamera) return;
+
+  if (orientationActive && baseGamma !== null) {
+    updateCamera3DFromOrientation();
+  } else {
+    threeCamera.updateMatrixWorld(true);
+    xrLastCamera = threeCamera;
+  }
+
+  updateXRObjectAnimations();
+  expireXRObjects(time);
+  threeRenderer.render(threeScene, threeCamera);
+  updateXRHeadLight();
+  maintainXRSpawnDensity(time);
+}
+
+function updateCamera3DFromOrientation() {
+  if (!camera3DActive || !threeCamera) return;
+
+  const gammaDelta = baseGamma === null ? 0 : smoothGamma - baseGamma;
+  const betaDelta = baseBeta === null ? 0 : smoothBeta - baseBeta;
+  const alphaDelta = hasAlphaReading && baseAlpha !== null
+    ? getCompassDelta(baseAlpha, smoothAlpha)
+    : gammaDelta;
+
+  const yaw = THREE.MathUtils.degToRad(clamp(-alphaDelta * 0.9, -85, 85));
+  const pitch = THREE.MathUtils.degToRad(clamp(-betaDelta * 0.75, -55, 55));
+  const roll = THREE.MathUtils.degToRad(clamp(-gammaDelta * 0.18, -14, 14));
+
+  threeCamera.rotation.set(pitch, yaw, roll, "YXZ");
+  threeCamera.updateProjectionMatrix();
+  threeCamera.updateMatrixWorld(true);
+  xrLastCamera = threeCamera;
 }
 
 function setupThreeLighting() {
@@ -1191,6 +1302,8 @@ function clearXRObjects() {
 
 function stopXRSession(endSession = true) {
   xrActive = false;
+  camera3DActive = false;
+  arRenderMode = "none";
   stopCamera();
 
   clearXRSpawnTimers();
@@ -1199,6 +1312,7 @@ function stopXRSession(endSession = true) {
   xrLastCamera = null;
 
   document.body.classList.remove("xr-mode");
+  document.body.classList.remove("camera-3d-mode");
 
   if (threeRenderer) {
     threeRenderer.setAnimationLoop(null);
@@ -1429,12 +1543,32 @@ function handleBrowserBack(event) {
 
 async function startGame() {
   stopOrientationTracking();
+  stopXRSession();
   stopCamera();
 
-  const xrReady = await startXRSession();
-  const fallbackReady = xrReady ? false : await startFallbackARSession();
+  let xrReady = false;
+  let camera3DReady = false;
+  let fallbackReady = false;
 
-  if (!xrReady && !fallbackReady) {
+  if (isAndroidDevice()) {
+    xrReady = await startXRSession();
+
+    if (!xrReady) {
+      showAppNotice(
+        "WebXR Needed",
+        "Untuk Android, buka game ini di Chrome Android yang mendukung immersive WebXR AR."
+      );
+      return;
+    }
+  } else if (isIOSDevice()) {
+    camera3DReady = await startCamera3DSession();
+    fallbackReady = camera3DReady ? false : await startFallbackARSession();
+  } else {
+    xrReady = await startXRSession();
+    fallbackReady = xrReady ? false : await startFallbackARSession();
+  }
+
+  if (!xrReady && !camera3DReady && !fallbackReady) {
     return;
   }
 
@@ -1454,7 +1588,7 @@ async function startGame() {
   startVoiceCatch();
   runTimer();
 
-  if (xrReady) {
+  if (xrReady || camera3DReady) {
     runXRSpawner();
   } else {
     runSpawner();
@@ -1462,11 +1596,32 @@ async function startGame() {
 }
 
 async function startFallbackARSession() {
+  xrActive = false;
+  camera3DActive = false;
+  arRenderMode = "dom";
+  document.body.classList.remove("xr-mode");
+  document.body.classList.remove("camera-3d-mode");
+  if (threeRenderer) {
+    threeRenderer.setAnimationLoop(null);
+  }
+
+  let orientationReady = false;
+
+  if (isIOSDevice()) {
+    orientationReady = await startOrientationTracking();
+  }
+
   const cameraReady = await startCamera();
+
+  if (!cameraReady && orientationReady) {
+    stopOrientationTracking();
+  }
 
   if (!cameraReady) return false;
 
-  const orientationReady = await startOrientationTracking();
+  if (!orientationReady) {
+    orientationReady = await startOrientationTracking();
+  }
 
   if (!orientationReady && isIOSDevice()) {
     showAppNotice(
@@ -2486,6 +2641,20 @@ function smoothAngle(current, target) {
   }
 
   return current + ORIENT_SMOOTH * delta;
+}
+
+function smoothCompassAngle(current, target) {
+  const delta = getCompassDelta(current, target);
+
+  if (Math.abs(delta) <= ORIENT_DEADZONE) {
+    return current;
+  }
+
+  return (current + ORIENT_SMOOTH * delta + 360) % 360;
+}
+
+function getCompassDelta(from, to) {
+  return ((to - from + 540) % 360) - 180;
 }
 
 function clamp(value, min, max) {

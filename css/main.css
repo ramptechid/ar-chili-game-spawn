@@ -104,6 +104,12 @@ body.xr-mode #xrCanvas {
   display: block;
 }
 
+body.camera-3d-mode #xrCanvas {
+  z-index: 5;
+  display: block;
+  pointer-events: none;
+}
+
 /* GAME AREA */
 #gameArea {
   position: fixed;
