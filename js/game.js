@@ -284,6 +284,8 @@ let xrInitialSpawnTimeouts = [];
 let nextXRExpireAt = 0;
 let arRenderMode = "none";
 let camera3DActive = false;
+const centerRaycaster = new THREE.Raycaster();
+const centerScreenPoint = new THREE.Vector2(0, 0);
 
 // Voice state
 let voiceActive = false;
@@ -320,6 +322,12 @@ startBtn.addEventListener("click", startGame);
 playAgainBtn.addEventListener("click", resetToIntro);
 shareBtn.addEventListener("click", shareScoreImage);
 catchBtn.addEventListener("click", catchChiliByMarker);
+window.addEventListener("try-catch", catchChiliByMarker);
+if (aimArea) {
+  aimArea.addEventListener("click", () => {
+    window.dispatchEvent(new CustomEvent("try-catch"));
+  });
+}
 
 saveScoreBtn.addEventListener("click", openSaveScoreModal);
 closeSaveModalBtn.addEventListener("click", closeSaveScoreModal);
@@ -879,6 +887,14 @@ function setObjectOpacity(obj, alpha) {
   });
 }
 
+function spawnObjects(count) {
+  return Array.from({ length: Math.max(0, count) }, () => ({
+    x: randF(-10, 10),
+    y: randF(-10, 10),
+    z: randF(-10, 10)
+  }));
+}
+
 function spawnXRObject(nearView = false) {
   if (!xrLastCamera || getActiveXRObjectCount() >= XR_MAX_ACTIVE_OBJECTS) return;
 
@@ -888,7 +904,9 @@ function spawnXRObject(nearView = false) {
   const cameraMatrix = xrLastCamera.matrixWorld.elements;
   const cameraPosition = [cameraMatrix[12], cameraMatrix[13], cameraMatrix[14]];
 
-  const spawnPose = getXRSpawnPose(cameraMatrix, cameraPosition, asset, nearView);
+  const spawnPose = camera3DActive
+    ? getCamera3DSpawnPose(cameraPosition, nearView)
+    : getXRSpawnPose(cameraMatrix, cameraPosition, asset, nearView);
   if (!spawnPose) return;
 
   const templateGroup = xrModels.get(asset.modelSrc);
@@ -985,6 +1003,51 @@ function getXRSpawnPose(cameraMatrix, cameraPosition, asset, nearView = false) {
         position,
         yaw: Math.atan2(-direction[0], -direction[1])
       };
+    }
+  }
+
+  return bestSpacing > XR_MIN_OBJECT_SPACING * 0.62 ? bestPose : null;
+}
+
+function getCamera3DSpawnPose(cameraPosition, nearView = false) {
+  const candidates = spawnObjects(XR_SPAWN_ATTEMPTS);
+  let bestPose = null;
+  let bestSpacing = -Infinity;
+
+  for (const candidate of candidates) {
+    const distanceScale = nearView ? 0.46 : 0.82;
+    const position = [
+      candidate.x * distanceScale,
+      clamp(candidate.y * 0.08, XR_HEIGHT_MIN, XR_HEIGHT_MAX),
+      -Math.abs(candidate.z * distanceScale) - XR_DISTANCE_MIN
+    ];
+
+    const distanceFromPlayer = Math.sqrt(
+      (position[0] - cameraPosition[0]) ** 2 +
+      (position[2] - cameraPosition[2]) ** 2
+    );
+
+    if (distanceFromPlayer < XR_DISTANCE_MIN || distanceFromPlayer > XR_DISTANCE_MAX + 1.4) {
+      continue;
+    }
+
+    const spacing = getNearestXRObjectDistance(position);
+    const faceDirection = [
+      position[0] - cameraPosition[0],
+      position[2] - cameraPosition[2]
+    ];
+    const pose = {
+      position,
+      yaw: Math.atan2(-faceDirection[0], -faceDirection[1])
+    };
+
+    if (spacing >= XR_MIN_OBJECT_SPACING) {
+      return pose;
+    }
+
+    if (spacing > bestSpacing) {
+      bestSpacing = spacing;
+      bestPose = pose;
     }
   }
 
@@ -1186,15 +1249,74 @@ function isXRObjectInView(object) {
 function catchXRObjectByMarker() {
   if (!xrActive || !xrLastCamera) return false;
 
+  const raycastHit = findXRObjectAtScreenCenter();
+  const object = raycastHit || findXRObjectNearScreenCenter();
+
+  if (!object) {
+    showMissEffect();
+    return true;
+  }
+
+  collectXRObject(object);
+  return true;
+}
+
+function findXRObjectAtScreenCenter() {
+  if (!xrLastCamera) return null;
+
+  const activeObjects = getCatchableXRObjects();
+  if (activeObjects.length === 0) return null;
+
+  const camera = getCenterRaycastCamera();
+  if (!camera) return null;
+
+  centerRaycaster.setFromCamera(centerScreenPoint, camera);
+  const intersections = centerRaycaster.intersectObjects(
+    activeObjects.map((object) => object.mesh).filter(Boolean),
+    true
+  );
+
+  for (const intersection of intersections) {
+    const object = getXRObjectFromIntersectedMesh(intersection.object, activeObjects);
+
+    if (object) return object;
+  }
+
+  return null;
+}
+
+function getCenterRaycastCamera() {
+  if (!xrLastCamera) return null;
+
+  if (xrLastCamera.isArrayCamera && xrLastCamera.cameras?.length > 0) {
+    return xrLastCamera.cameras[0];
+  }
+
+  return xrLastCamera;
+}
+
+function getXRObjectFromIntersectedMesh(mesh, activeObjects) {
+  let current = mesh;
+
+  while (current) {
+    const object = activeObjects.find((candidate) => candidate.mesh === current);
+
+    if (object) return object;
+
+    current = current.parent;
+  }
+
+  return null;
+}
+
+function findXRObjectNearScreenCenter() {
   let closest = null;
   let closestDist = Infinity;
   let closestTarget = null;
   let closestTargetDist = Infinity;
   const radius = 0.22;
 
-  xrObjects.forEach((object) => {
-    if (object.caught || object.catching || object.expiring) return;
-
+  getCatchableXRObjects().forEach((object) => {
     const ndc = projectXRPoint(object.position);
     if (!ndc || ndc.z < -1 || ndc.z > 1) return;
 
@@ -1212,15 +1334,13 @@ function catchXRObjectByMarker() {
     }
   });
 
-  const object = closestTarget || closest;
+  return closestTarget || closest;
+}
 
-  if (!object) {
-    showMissEffect();
-    return true;
-  }
-
-  collectXRObject(object);
-  return true;
+function getCatchableXRObjects() {
+  return xrObjects.filter(
+    (object) => !object.caught && !object.catching && !object.expiring && object.mesh
+  );
 }
 
 function collectXRObject(object) {
@@ -1546,26 +1666,13 @@ async function startGame() {
   stopXRSession();
   stopCamera();
 
-  let xrReady = false;
+  let xrReady = await startXRSession();
   let camera3DReady = false;
   let fallbackReady = false;
 
-  if (isAndroidDevice()) {
-    xrReady = await startXRSession();
-
-    if (!xrReady) {
-      showAppNotice(
-        "WebXR Needed",
-        "Untuk Android, buka game ini di Chrome Android yang mendukung immersive WebXR AR."
-      );
-      return;
-    }
-  } else if (isIOSDevice()) {
+  if (!xrReady) {
     camera3DReady = await startCamera3DSession();
     fallbackReady = camera3DReady ? false : await startFallbackARSession();
-  } else {
-    xrReady = await startXRSession();
-    fallbackReady = xrReady ? false : await startFallbackARSession();
   }
 
   if (!xrReady && !camera3DReady && !fallbackReady) {
