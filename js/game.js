@@ -69,7 +69,6 @@ const gameHud = document.getElementById("gameHud");
 const startBtn = document.getElementById("startBtn");
 const playAgainBtn = document.getElementById("playAgainBtn");
 const shareBtn = document.getElementById("shareBtn");
-const catchBtn = document.getElementById("catchBtn");
 
 const saveScoreBtn = document.getElementById("saveScoreBtn");
 const saveScoreModal = document.getElementById("saveScoreModal");
@@ -321,13 +320,6 @@ setBrowserScreen("intro", "replace");
 startBtn.addEventListener("click", startGame);
 playAgainBtn.addEventListener("click", resetToIntro);
 shareBtn.addEventListener("click", shareScoreImage);
-catchBtn.addEventListener("click", catchChiliByMarker);
-window.addEventListener("try-catch", catchChiliByMarker);
-if (aimArea) {
-  aimArea.addEventListener("click", () => {
-    window.dispatchEvent(new CustomEvent("try-catch"));
-  });
-}
 
 saveScoreBtn.addEventListener("click", openSaveScoreModal);
 closeSaveModalBtn.addEventListener("click", closeSaveScoreModal);

@@ -77,11 +77,6 @@
   contain: layout paint style;
 }
 
-body.game-mode .aim-area {
-  pointer-events: auto;
-  cursor: pointer;
-}
-
 .target-brackets {
   position: absolute;
   inset: 0;
