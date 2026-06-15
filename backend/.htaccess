@@ -1,0 +1,8 @@
+# Blokir akses langsung ke file config.php
+<Files "config.php">
+  Order Allow,Deny
+  Deny from all
+</Files>
+
+# Aktifkan CORS preflight via .htaccess (backup — sudah ditangani PHP)
+Header always set Vary "Origin"

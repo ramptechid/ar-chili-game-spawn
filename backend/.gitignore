@@ -1,0 +1,2 @@
+# Jangan commit kredensial database dan admin ke GitHub
+api/config.php
