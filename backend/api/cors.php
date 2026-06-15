@@ -24,7 +24,8 @@ function cors_headers(string $method = 'GET'): void {
 }
 
 function db_connect(): PDO {
-    $dsn = sprintf('mysql:host=%s;dbname=%s;charset=%s', DB_HOST, DB_NAME, DB_CHARSET);
+    $charset = defined('DB_CHARSET') ? DB_CHARSET : 'utf8mb4';
+    $dsn = sprintf('mysql:host=%s;dbname=%s;charset=%s', DB_HOST, DB_NAME, $charset);
     return new PDO($dsn, DB_USER, DB_PASS, [
         PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
