@@ -3,7 +3,7 @@ require_once __DIR__ . '/cors.php';
 cors_headers('GET');
 header('Content-Type: application/json');
 
-$limit = min((int)($_GET['limit'] ?? 100), 200);
+$limit = min((int)($_GET['limit'] ?? 5000), 5000);
 
 try {
     $pdo  = db_connect();

@@ -28,20 +28,30 @@ if ($score < 0 || $score > 9999) {
 }
 
 try {
-    $pdo  = db_connect();
-    $stmt = $pdo->prepare(
-        'INSERT INTO scores (player_name, instagram, score) VALUES (:name, :ig, :score)'
-    );
-    $stmt->execute([
-        ':name'  => $playerName,
-        ':ig'    => $instagram,
-        ':score' => $score,
-    ]);
-    $newId = (int)$pdo->lastInsertId();
+    $pdo = db_connect();
+
+    if ($instagram !== '') {
+        $checkStmt = $pdo->prepare('SELECT id, score FROM scores WHERE instagram = :ig LIMIT 1');
+        $checkStmt->execute([':ig' => $instagram]);
+        $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($existing) {
+            $score = (int)$existing['score'] + $score;
+            $pdo->prepare('UPDATE scores SET player_name = :name, score = :score WHERE instagram = :ig')
+                ->execute([':name' => $playerName, ':score' => $score, ':ig' => $instagram]);
+        } else {
+            $pdo->prepare('INSERT INTO scores (player_name, instagram, score) VALUES (:name, :ig, :score)')
+                ->execute([':name' => $playerName, ':ig' => $instagram, ':score' => $score]);
+        }
+    } else {
+        $pdo->prepare('INSERT INTO scores (player_name, instagram, score) VALUES (:name, :ig, :score)')
+            ->execute([':name' => $playerName, ':ig' => $instagram, ':score' => $score]);
+    }
+
     $rankStmt = $pdo->prepare('SELECT COUNT(*) FROM scores WHERE score > :score');
     $rankStmt->execute([':score' => $score]);
     $rank = (int)$rankStmt->fetchColumn() + 1;
-    echo json_encode(['ok' => true, 'id' => $newId, 'rank' => $rank]);
+    echo json_encode(['ok' => true, 'rank' => $rank]);
 } catch (PDOException $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Database error']);
