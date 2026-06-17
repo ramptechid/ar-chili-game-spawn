@@ -37,7 +37,11 @@ try {
         ':ig'    => $instagram,
         ':score' => $score,
     ]);
-    echo json_encode(['ok' => true, 'id' => (int)$pdo->lastInsertId()]);
+    $newId = (int)$pdo->lastInsertId();
+    $rankStmt = $pdo->prepare('SELECT COUNT(*) FROM scores WHERE score > :score');
+    $rankStmt->execute([':score' => $score]);
+    $rank = (int)$rankStmt->fetchColumn() + 1;
+    echo json_encode(['ok' => true, 'id' => $newId, 'rank' => $rank]);
 } catch (PDOException $e) {
     http_response_code(500);
     echo json_encode(['error' => 'Database error']);
