@@ -10,6 +10,7 @@ define('DB_CHARSET', 'utf8mb4');
 
 // Daftar origin yang diizinkan CORS (tambahkan URL GitHub Pages kamu)
 define('ALLOWED_ORIGINS', [
+    'https://cabeijogame.com',
     'https://ramptechid.github.io',
     'http://localhost:5173',
     'http://localhost:4173',
